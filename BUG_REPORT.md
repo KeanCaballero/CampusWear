@@ -2,11 +2,23 @@
 
 ## Last Updated
 
-**27 August 2026, Asia/Manila**
+**29 August 2026, Asia/Manila**
+
+## Current Release Baseline
+
+| Item | Value |
+|---|---|
+| GitHub `main` (current) | `0881c015824734016285ce0d4d6aeb105c1256e4` — **`chore: publish vendor delete release`**, 29 August 2026 |
+| Vercel Production (current) | **Ready** for the matching `0881c01` commit on branch `main`, confirmed in the Vercel dashboard on 29 August 2026 |
+| Previous release | `095bc81fa15b364f6a65567fd9d4a4fc2417145a` — **`chore: publish CampusWear production checkpoint`**, 27 August 2026; Vercel Production reported **Ready** at that time |
+
+> **Why older commit SHAs in this report are unreachable from `main`.** Each publish of this project creates a **new orphan root commit** and force-replaces `main` with it, instead of adding a commit on top of the existing history. As a result, earlier release SHAs such as `095bc81` are no longer ancestors of `main`: `git log` will not list them and `git merge-base` finds no common ancestor. They still exist on GitHub and remain valid, citable records of what was verified at the time.
+>
+> Historical entries in this report therefore keep the SHA that was current when the observation was made. Only statements about the **present** baseline are updated to `0881c01`.
 
 ## Overall Status
 
-**FINAL REDESIGN DEPLOYED / REAL-CLIENT ACCEPTANCE REMAINS LIMITED BY REAL OPERATIONS DATA.** GitHub `main` is now at `095bc81fa15b364f6a65567fd9d4a4fc2417145a` (**“chore: publish CampusWear production checkpoint”**), and Vercel Production reports **Ready** for the matching `095bc81` commit. The deployed application, database schema, RLS model, platform-account controls, public route guards, and automated validation are in place. The former public diagnostic collector returns CampusWear’s normal 404 page. A connected vendor session rendered the live redesigned Vendor Workspace with its scoped metrics, pickup-location control, and recent-order information without any update action. The real remaining launch limitations are cross-role acceptance, owner-approved production-data hygiene, and onboarding the authorized organizations that will provide real inventory.
+**FINAL REDESIGN DEPLOYED / REAL-CLIENT ACCEPTANCE REMAINS LIMITED BY REAL OPERATIONS DATA.** GitHub `main` is now at `0881c015824734016285ce0d4d6aeb105c1256e4` (**`chore: publish vendor delete release`**). Vercel Production reports **Ready** for the matching `0881c01` commit on branch `main`. The previous `095bc81` release was the prior verified deployment. The deployed application, database schema, RLS model, platform-account controls, public route guards, and automated validation are in place. The former public diagnostic collector returns CampusWear’s normal 404 page. A connected vendor session rendered the live redesigned Vendor Workspace with its scoped metrics, pickup-location control, and recent-order information without any update action. The real remaining launch limitations are cross-role acceptance, owner-approved production-data hygiene, and onboarding the authorized organizations that will provide real inventory.
 
 ## Critical Issues
 
@@ -18,7 +30,7 @@
 
 The compatible Pasted Content 13 work is complete. A new regression test protects the production build rule that development diagnostic assets are served only in local development and the `dist/public/__manus__` directory is removed during production builds. The full suite now passes **93 Vitest tests across 41 files**, strict TypeScript, client/server production build, and `verify:supabase-production`; concrete credential-value and deferred-storefront implementation scans are clean.
 
-The repository owner subsequently published this checkpoint from an authenticated local Git client. GitHub `main` now resolves to `095bc81fa15b364f6a65567fd9d4a4fc2417145a` (`chore: publish CampusWear production checkpoint`), and Vercel Production reports `Ready` for the matching `095bc81` deployment. The guarded owner-side publication is complete; no unqualified force-push was used.
+The repository owner subsequently published this checkpoint from an authenticated local Git client. GitHub `main` then resolved to `095bc81fa15b364f6a65567fd9d4a4fc2417145a` (`chore: publish CampusWear production checkpoint`), and Vercel Production reported `Ready` for the matching `095bc81` deployment. That guarded owner-side publication was completed; no unqualified force-push was used. `main` has since been republished as `0881c01` — see **Current Release Baseline**.
 
 The requested Store Profile migration was not applied. The authorized Supabase management connector currently exposes only the unrelated inactive **SaveWise** project (`yvigdpnagjjubukfyfji`), not CampusWear (`iwexgirpqomquorkikzs`). Applying a CampusWear migration through that connection would be unsafe and is prohibited. The deployable source migration set intentionally contains no Store Profile migration; the current verified catalog RPC remains the compatible implementation. A valid database migration path must be restored before any public store profile, logo, banner, operating-hours, or store-specific catalog route can be added and verified.
 
@@ -391,7 +403,7 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 **What has already been fixed:** Task-facing Auth URL guidance, checkpoint history, release archive exclusions, and credential-free SMTP handoff records were updated.
 
-**Actual behavior:** This historical publication issue is resolved. GitHub `main` is verified at `095bc81fa15b364f6a65567fd9d4a4fc2417145a` and Vercel Production is Ready from matching `095bc81`; the report and handoff now record the final client-owned acceptance steps.
+**Actual behavior:** This historical publication issue is resolved. GitHub `main` was verified at the then-current `095bc81fa15b364f6a65567fd9d4a4fc2417145a`, with Vercel Production Ready from matching `095bc81`; the report and handoff record the final client-owned acceptance steps. `main` is now `0881c01`, and Vercel Production reports **Ready** for that matching commit.
 
 **Expected behavior:** The platform owner should have an approved and tested process to deploy, roll back, rotate compromised SMTP credentials, deactivate compromised accounts, and apply migrations safely.
 
@@ -399,7 +411,7 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 **Exact action required:** None for the verified release. Use the documented guarded owner-side Git process and production verification before any future change.
 
-**Verification method:** GitHub `main` and Vercel Production were verified at matching `095bc81`; production diagnostic routes return normal not-found responses.
+**Verification method:** GitHub `main` and Vercel Production were verified at the then-current matching `095bc81`, and production diagnostic routes returned normal not-found responses. The GitHub/Vercel release match has since been re-verified at `0881c01`, which Vercel Production reports as **Ready**; the production diagnostic-route re-check on that deployment is not yet recorded.
 
 **Risk:** A future operational incident may take longer to recover from.
 
@@ -450,11 +462,11 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 **Actual behavior:** The prior deployment served the collector script. After the new Vercel deployment, read-only requests to both `https://campuswear.vercel.app/__manus__/debug-collector.js` and `https://campuswear.vercel.app/__manus__/logs` rendered CampusWear’s normal 404 state and exposed no diagnostic script or log data.
 
-**How to reproduce:** Historical only: the pre-fix deployment served JavaScript at `https://campuswear.vercel.app/__manus__/debug-collector.js`. The current `095bc81` release returns the ordinary application not-found response.
+**How to reproduce:** Historical only: the pre-fix deployment served JavaScript at `https://campuswear.vercel.app/__manus__/debug-collector.js`. The then-current `095bc81` release returned the ordinary application not-found response.
 
 **Resolution:** The Vite configuration now limits the collector plugin to development serving, while the production server dynamically loads Vite configuration only in its development setup path. The build also removes `dist/public/__manus__` as a defense-in-depth measure. A fresh production build verified that neither the collector nor diagnostic version file exists in the deployable output, and that generated production HTML, client assets, and bundled server contain no `debug-collector`, `__manus__/logs`, or collector-plugin reference.
 
-**What has already been fixed:** The verified source and current live `095bc81` release have no collector output file or runtime reference.
+**What has already been fixed:** The verified source and the live `095bc81` release had no collector output file or runtime reference. The same production-build safeguards are retained in the current `0881c01` source.
 
 **What remains:** No diagnostic-removal action remains. Continue to keep production builds on the verified configuration.
 
@@ -462,7 +474,7 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 **Local verification:** The final validation suite passed after the change: **93 Vitest tests across 41 files**, strict TypeScript validation, production client/server build, Supabase readiness probe, no deployable `__manus__` directory, no debug-collector reference in generated production output, and no tracked SMTP/service-role/private-key pattern in application source or documentation.
 
-**Verification method:** Verified on the current `095bc81` Vercel deployment: both paths render the application 404 state. No diagnostic data was submitted during the audit.
+**Verification method:** Verified on the then-current `095bc81` Vercel deployment: both paths rendered the application 404 state. No diagnostic data was submitted during the audit. `0881c01` is now the deployed Vercel Production release; the same two paths have not yet been re-requested against it, and the production-build safeguards that removed the collector are unchanged in that source.
 
 ---
 
@@ -477,7 +489,7 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 **Expected behavior:** The authenticated GitHub identity should be able to force-push the user-authorized release snapshot to the repository’s `main` branch.
 
-**Actual behavior:** The connected environment’s write attempt was historically blocked by HTTPS 403, but the repository owner successfully published from a local Git client. GitHub `main` now resolves to `095bc81fa15b364f6a65567fd9d4a4fc2417145a` with message `chore: publish CampusWear production checkpoint`; Vercel reports Production **Ready** from matching source `main` / `095bc81`.
+**Actual behavior:** The connected environment’s write attempt was historically blocked by HTTPS 403, but the repository owner successfully published from a local Git client. GitHub `main` resolved at that time to `095bc81fa15b364f6a65567fd9d4a4fc2417145a` with message `chore: publish CampusWear production checkpoint`, and Vercel reported Production **Ready** from matching source `main` / `095bc81`. The same owner-side process has since published `0881c01` to `main`.
 
 **Reproduction:** Historical only: the sandbox GitHub credential returned HTTP 403 during an earlier automated push attempt. The verified release is already published; do not use an unqualified force-push for future publication.
 
@@ -487,7 +499,7 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 **Exact action required:** None for this release. Reauthorize the connected environment’s repository-write credential only if future automated publication is required.
 
-**Verification method:** Verified through GitHub and the Vercel Production overview: both identify the matching `095bc81` release, and the live collector route returns the application 404 state.
+**Verification method:** Verified at the time through GitHub and the Vercel Production overview: both identified the matching `095bc81` release, and the live collector route returned the application 404 state.
 
 ---
 
@@ -504,7 +516,7 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 | BUG-007 | **NON-BLOCKING IMPROVEMENT** | Decide whether leaked-password protection is a requirement for a broader launch tier. | If the service plan is upgraded, enable it and record the owner decision; existing confirmation, recovery, and rate limits stay enabled. |
 | BUG-008 | **CLIENT INPUT REQUIRED** | Review production records with the owner; remove only exact approved non-production records. | Confirm products, variants, orders, vendors, announcements, analytics, and reviews contain no fabricated data. |
 | BUG-009 | **NON-BLOCKING IMPROVEMENT** | Add route-level code splitting only if measured mobile performance requires it after acceptance. | Measure initial load on a representative mobile network profile; the approximately 1.88 MB advisory is not a launch blocker. |
-| BUG-010 | **READY** | Preserve the recorded GitHub/Vercel deployment, rollback, monitoring, and recovery procedures. | GitHub `main` and Vercel Production were verified at matching `095bc81`; Vercel reported Ready. |
+| BUG-010 | **READY** | Preserve the recorded GitHub/Vercel deployment, rollback, monitoring, and recovery procedures. | GitHub `main` and Vercel Production were verified at matching `095bc81`, where Vercel reported Ready. `main` is now `0881c01`, which Vercel Production reports as **Ready**. |
 | BUG-011 | **EXTERNAL DEPENDENCY** | Do not restore Store Profile code or a migration until a working authorized CampusWear management connection exists. | Review a migration and rollback plan against the actual CampusWear schema, then test separately with a real authorized vendor. |
 
 ---
@@ -526,13 +538,13 @@ Visual QA found a narrow-screen readability conflict between the student-home de
 
 ### Ready
 
-The CampusWear React/Vite/TypeScript build, verified Supabase schema/RLS model, storage policies, checkout and fulfillment RPCs, role-routing helpers, vendor-application workflow, school configuration, platform-account controls, public route availability, and production readiness probe are implemented. GitHub `main` is verified at `095bc81fa15b364f6a65567fd9d4a4fc2417145a`, and Vercel Production is **Ready** from the matching `095bc81` commit. The source passed **93 Vitest tests across 41 files**, strict TypeScript validation, client/server production build, Supabase readiness, credential-value safety scan, and deferred-storefront scan. The live public home/auth entry and the existing vendor role boundary render as expected; the live diagnostic routes render the ordinary application 404 state.
+The CampusWear React/Vite/TypeScript build, verified Supabase schema/RLS model, storage policies, checkout and fulfillment RPCs, role-routing helpers, vendor-application workflow, school configuration, platform-account controls, public route availability, and production readiness probe are implemented. GitHub `main` is at `0881c015824734016285ce0d4d6aeb105c1256e4` (`chore: publish vendor delete release`), and Vercel Production is **Ready** from that matching commit. The previous `095bc81` release was the prior verified deployment; that `095bc81` source passed **93 Vitest tests across 41 files**, strict TypeScript validation, client/server production build, Supabase readiness, credential-value safety scan, and deferred-storefront scan; on that release the live public home/auth entry and the existing vendor role boundary rendered as expected, and the live diagnostic routes rendered the ordinary application 404 state. Local validation for the current `0881c01` source is recorded under **Vendor product deletion control**; the equivalent live route re-observation on the `0881c01` deployment is not yet recorded.
 
 ### Historical and current live deep-link observations
 
 | Route | Observed production behavior |
 |---|---|
-| `/` | Historical smoke testing rendered the public landing page normally; the current release is verified separately at `095bc81`. |
+| `/` | Historical smoke testing rendered the public landing page normally; the `095bc81` release was verified separately. No route-level re-check is recorded for the `0881c01` deployment. |
 | `/student` | Public student portal rendered with honest catalog and announcement empty states after cleanup. |
 | `/auth/confirmed` | Confirmation-success page rendered. |
 | `/auth/reset` | Password-reset form rendered with new-password and confirmation fields. |
@@ -574,7 +586,9 @@ Current production behavior remains safe and honest: public catalog cards and pr
 
 ### Current Safe Release Deployment
 
-The current source was published to GitHub `main` at `095bc81fa15b364f6a65567fd9d4a4fc2417145a` (**`chore: publish CampusWear production checkpoint`**). Vercel Production is **Ready** from matching `095bc81`. Read-only production verification confirms the public CampusWear entry, signed-in vendor dashboard, role-safe redirects from vendor access to student-only routes, size-level SKU/stock/threshold inventory display, and diagnostic-route 404 behavior. The deferred Store Profile module remains absent.
+The current source is published to GitHub `main` at `0881c015824734016285ce0d4d6aeb105c1256e4` (**`chore: publish vendor delete release`**), and Vercel Production is **Ready** from that matching commit on branch `main`.
+
+The previous `095bc81fa15b364f6a65567fd9d4a4fc2417145a` release (**`chore: publish CampusWear production checkpoint`**) was the prior verified deployment. Read-only production verification on that release confirmed the public CampusWear entry, signed-in vendor dashboard, role-safe redirects from vendor access to student-only routes, size-level SKU/stock/threshold inventory display, and diagnostic-route 404 behavior. The deferred Store Profile module remains absent from the source.
 
 ### UI Quality Review — Mobile Student Discovery
 
@@ -592,7 +606,7 @@ The client must provide and authorize the final vendor/store name, vendor contac
 
 ### Recommended Next Task
 
-**Preserve the verified `095bc81` release and Mailjet/Auth safeguards, then complete the remaining real-role, vendor, school-admin, Store Profile access, and operational acceptance work.** Spam/Junk/Promotions placement is a deliverability consideration, not a reason to weaken authentication safeguards.
+**Preserve the verified and deployed `0881c01` release and the Mailjet/Auth safeguards, then complete the remaining real-role, vendor, school-admin, Store Profile access, and operational acceptance work.** Spam/Junk/Promotions placement is a deliverability consideration, not a reason to weaken authentication safeguards.
 
 ## Final Deployment Status
 
@@ -606,7 +620,7 @@ The production-build collector defect was fully addressed in source. The debug p
 
 ### Email Delivery Status
 
-**Mailjet Free** is the active Supabase custom-SMTP path. The generic CampusWear sender is active, and authorized confirmation and recovery flows completed using the approved routing without exposing credentials or weakening Auth safeguards. Historic Brevo troubleshooting is context only; it is not an active launch dependency. GitHub/Vercel publication is complete at `095bc81`.
+**Mailjet Free** is the active Supabase custom-SMTP path. The generic CampusWear sender is active, and authorized confirmation and recovery flows completed using the approved routing without exposing credentials or weakening Auth safeguards. Historic Brevo troubleshooting is context only; it is not an active launch dependency. GitHub/Vercel publication is complete at `0881c01`, with Vercel Production **Ready** from the matching commit.
 
 ### NEEDS REAL ACCOUNT VERIFICATION
 
@@ -614,9 +628,11 @@ Real authorized vendor, vendor-staff, school-admin, and separate confirmed-stude
 
 ### PRODUCTION URL
 
-`https://campuswear.vercel.app` is the current verified deployment URL. Vercel Production is **Ready** from GitHub `main` commit `095bc81` (`chore: publish CampusWear production checkpoint`), which matches `095bc81fa15b364f6a65567fd9d4a4fc2417145a`. The debug collector, diagnostic log, and version-metadata paths each render CampusWear’s application 404 state.
+`https://campuswear.vercel.app` is the current verified deployment URL. Vercel Production is **Ready** from GitHub `main` commit `0881c01` (`chore: publish vendor delete release`), which matches `0881c015824734016285ce0d4d6aeb105c1256e4`. The prior verified deployment was `095bc81` (`chore: publish CampusWear production checkpoint`, full SHA `095bc81fa15b364f6a65567fd9d4a4fc2417145a`); on that release the debug collector, diagnostic log, and version-metadata paths each rendered CampusWear’s application 404 state.
 
 ### TEST RESULTS
+
+Except for the GitHub/Vercel release match, which has been re-verified at `0881c01`, these results were recorded for the `095bc81` release and have not been re-run and re-recorded here for `0881c01`; see **Vendor product deletion control** for that release’s local validation.
 
 | Check | Result |
 |---|---|
@@ -625,12 +641,12 @@ Real authorized vendor, vendor-staff, school-admin, and separate confirmed-stude
 | Production build | Passed for client and server. The known Vite large-chunk advisory remains an improvement item, not a build failure. |
 | Supabase readiness | Passed; production schema and guarded RPC endpoints are reachable. |
 | Production artifact audit | Passed; no `__manus__` output, collector reference, or tracked secret-pattern match. |
-| GitHub/Vercel release match | Passed; GitHub `main` and Vercel Production both identify `095bc81`. |
+| GitHub/Vercel release match | Passed. Re-verified at `0881c01`: GitHub `main` and Vercel Production both identify that commit, with Production **Ready**. It previously passed the same way at `095bc81`. |
 | Live diagnostic endpoints | Passed; collector, logs, and version-metadata paths render application 404 states. |
 
 ### FINAL RECOMMENDATION
 
-**READY FOR CONTROLLED LAUNCH / FULL CLIENT ACCEPTANCE PENDING.** The current Vercel deployment matches `095bc81`, exposes no checked diagnostic endpoint, and passed the recorded public/auth/role-boundary smoke checks. Mailjet confirmation and recovery are verified. Preserve the baseline, collect the required real client data and roles, restore a project-scoped CampusWear Supabase management path before any Store Profile work, and complete the documented cross-role acceptance using only authorized accounts and data.
+**READY FOR CONTROLLED LAUNCH / FULL CLIENT ACCEPTANCE PENDING.** GitHub `main` is at `0881c01` and Vercel Production is **Ready** from that matching commit. The prior `095bc81` deployment exposed no checked diagnostic endpoint and passed the recorded public/auth/role-boundary smoke checks; those route-level checks have not yet been re-observed on `0881c01`. Mailjet confirmation and recovery are verified. Preserve the baseline, collect the required real client data and roles, restore a project-scoped CampusWear Supabase management path before any Store Profile work, and complete the documented cross-role acceptance using only authorized accounts and data.
 
 ## References
 
@@ -672,7 +688,7 @@ The platform workspace is therefore ready for the currently available read-only 
 
 | Category | Current result |
 |---|---|
-| **READY** | Public/auth/student/vendor/platform route checks already documented; platform-admin overview, Accounts, Team, and strict `/student` denial verified; both approved platform RPC corrections saved and live routes complete without `42804`; GitHub/Vercel baseline remains `095bc81` Ready. |
+| **READY** | Public/auth/student/vendor/platform route checks already documented; platform-admin overview, Accounts, Team, and strict `/student` denial verified; both approved platform RPC corrections saved and live routes complete without `42804`; the GitHub/Vercel baseline is now `0881c01`, with Vercel Production **Ready** from the matching commit. |
 | **CLIENT INPUT REQUIRED** | Authorized school administrator; real vendor/store and vendor staff; actual products, images, sizes, SKUs, stock, low-stock thresholds, pickup location, operating hours, and acceptance participants. |
 | **EXTERNAL DEPENDENCIES** | Authorized CampusWear Supabase management path for the deferred Store Profile migration; Mailjet remains the active custom-SMTP provider and should be monitored without weakening Auth safeguards. |
 | **NON-BLOCKING IMPROVEMENTS** | Measure mobile performance and consider route-level code splitting for the approximately 1.88 MB Vite advisory only after real acceptance; review any test-labelled records only with exact IDs and owner approval. |
@@ -737,7 +753,7 @@ A subsequent re-authenticated vendor Products view rendered `0 products`, but th
 
 The vendor Products page now includes an accessible, confirmation-gated **Delete product** action. The client mutation is scoped to the authenticated vendor context and attempts to remove the associated stored image after successful product deletion. The live CampusWear Supabase project contains a `DELETE` policy on `public.products` for authenticated vendor staff that requires `private.is_vendor_staff(vendor_id)` and rejects products referenced by `public.order_items` through `public.product_variants`; order-linked products must be hidden instead.
 
-Focused delete-contract coverage passed, the full regression suite passed with **97 tests across 43 files**, strict TypeScript passed, and the production build passed. The control is implemented in the current source but still requires deployment before it is available in the current live release. The temporary QA product is currently hidden from the student-facing catalog, but its physical deletion and image cleanup are not confirmed. The previous exact-record deletion attempt was rejected by a read-only transaction; no unrelated data was changed. Publish the updated source, then use the authorized vendor account’s confirmation dialog for future deletion, or provide a writable owner-level cleanup path for the existing QA record.
+Focused delete-contract coverage passed, the full regression suite passed with **97 tests across 43 files**, strict TypeScript passed, and the production build passed. The control is implemented in the current source, which is published to GitHub `main` as `0881c01` (`chore: publish vendor delete release`) and deployed to Vercel Production as the **Ready** release. The delete control is therefore part of the live release, though it has not yet been exercised there by an authorized vendor account. The temporary QA product is currently hidden from the student-facing catalog, but its physical deletion and image cleanup are not confirmed. The previous exact-record deletion attempt was rejected by a read-only transaction; no unrelated data was changed. With `0881c01` live, use the authorized vendor account’s confirmation dialog for future deletion, or provide a writable owner-level cleanup path for the existing QA record.
 
 ## BUG-017 — Vendor product deletion reported success while the product survived
 

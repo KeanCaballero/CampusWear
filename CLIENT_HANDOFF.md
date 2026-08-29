@@ -2,8 +2,11 @@
 
 **Release:** Final client-handoff preparation  
 **Production application:** [campuswear.vercel.app](https://campuswear.vercel.app/)  
-**Verified source release:** [`095bc81`](https://github.com/KeanCaballero/CampusWear/commit/095bc81fa15b364f6a65567fd9d4a4fc2417145a)
-**Deployment state:** Vercel Production reported **Ready** for the matching source commit on 27 August 2026.
+**Verified source release:** [`0881c01`](https://github.com/KeanCaballero/CampusWear/commit/0881c015824734016285ce0d4d6aeb105c1256e4) — `chore: publish vendor delete release`, 29 August 2026  
+**Deployment state:** Vercel Production reports **Ready** for the matching `0881c01` commit on branch `main`, confirmed 29 August 2026.  
+**Previous release:** [`095bc81`](https://github.com/KeanCaballero/CampusWear/commit/095bc81fa15b364f6a65567fd9d4a4fc2417145a) — Vercel Production reported **Ready** for that matching source commit on 27 August 2026.
+
+> Each CampusWear publish creates a new orphan root commit and force-replaces `main`, so earlier release SHAs such as `095bc81` are no longer reachable from `main` through `git log`. They remain valid on GitHub as records of what was verified at the time.
 
 > CampusWear is prepared for a **controlled launch**. The application is technically deployed and its verified workflows are ready to receive real information. It is not represented as fully client-accepted until an authorized vendor and school administrator complete acceptance testing with real organizational data.
 
@@ -23,7 +26,7 @@ CampusWear is an availability and pickup-request platform. Students can browse a
 
 | Classification | Current position | Required follow-up |
 |---|---|---|
-| **READY** | The verified `095bc81` source is deployed, the public home/auth entry and strict existing-vendor role redirects have been observed live, and the production diagnostic route returns the ordinary not-found screen. | Preserve this baseline; do not substitute test data or relax security safeguards. |
+| **READY** | The verified `0881c01` source is deployed, with Vercel Production **Ready** from the matching commit. On the prior `095bc81` deployment, the public home/auth entry and strict existing-vendor role redirects were observed live, and the production diagnostic route returned the ordinary not-found screen. | Repeat those live route checks on the `0881c01` deployment. Preserve this baseline; do not substitute test data or relax security safeguards. |
 | **CLIENT INPUT REQUIRED** | CampusWear has no client-approved final vendor/store identity, staff email, operating hours, catalog, product images, size-level stock, SKU values, pickup information, or authorized school administrator. | Supply and authorize the genuine operational information listed in this handoff. |
 | **EXTERNAL DEPENDENCY** | The available Supabase management connection is not scoped to CampusWear, so the deferred Store Profile schema work cannot be reviewed or applied safely. | Restore authorized management access to the CampusWear project before considering a reviewed, backed-up Store Profile migration. |
 | **NEEDS REAL-ACCOUNT VERIFICATION** | Student, vendor, school-admin, and platform-admin end-to-end acceptance has not been completed with the final authorized accounts. The existing vendor session also left `/vendor/orders` and `/vendor/announcements` on loading skeletons during non-mutating automated checks, without exposed request errors. | Have the real authorized vendor reproduce or clear these two observations with permission to collect diagnostics; then complete the cross-role test. |
@@ -158,4 +161,4 @@ The temporary product appeared in the live student catalog because newly created
 
 The updated Vendor Products workspace includes a **Delete product** action behind an accessible confirmation dialog. Use it only for a vendor-owned product with no order history. CampusWear blocks deletion when any order item references one of the product’s variants; in that case, use **Visible to students** to hide the product while preserving historical order information. The action removes the product and cascading size-level inventory records, then attempts to remove its stored image.
 
-This control is present in the current source release and requires deployment before vendor staff can use it. The previously created temporary QA product is currently hidden but its physical deletion remains unverified. Do not create another test record. Real vendor and school-admin acceptance remains required before full client acceptance.
+This control is present in the current `0881c01` release, which is deployed to Vercel Production, so it is available to authorized vendor staff. The previously created temporary QA product is currently hidden but its physical deletion remains unverified. Do not create another test record. Real vendor and school-admin acceptance remains required before full client acceptance.
