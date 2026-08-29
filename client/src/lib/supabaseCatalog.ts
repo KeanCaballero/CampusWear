@@ -529,7 +529,24 @@ export async function updateManagedProduct(input: { id: string; name: string; de
   if (error) throw error;
 }
 
-export class ProductDeleteBlockedError extends Error {
+/**
+ * Marks an error whose message was written for vendors and is safe to render verbatim.
+ *
+ * Raw PostgREST/Postgres errors must never reach the UI. They leak schema internals — table
+ * names, policy names, SQLSTATE text like `infinite recursion detected in policy for relation
+ * "products"` — and mean nothing to a vendor. Callers render `message` only for this class and
+ * fall back to their own copy for anything else.
+ */
+export class VendorFacingError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = "VendorFacingError";
+    if (options && "cause" in options) this.cause = options.cause;
+  }
+}
+
+/** The delete was refused by the database because order history references this product. */
+export class ProductDeleteBlockedError extends VendorFacingError {
   readonly productId: string;
   constructor(productId: string) {
     super("This product is part of a student order, so it cannot be permanently deleted. Hide it instead so the order history stays intact.");
@@ -538,25 +555,43 @@ export class ProductDeleteBlockedError extends Error {
   }
 }
 
+/**
+ * The delete failed for a reason that is not a policy refusal — a transport failure, an outage,
+ * a schema fault. The underlying error is preserved as `cause` for diagnostics but never shown.
+ */
+export class ProductDeleteFailedError extends VendorFacingError {
+  readonly productId: string;
+  constructor(productId: string, options?: { cause?: unknown }) {
+    super("This product could not be deleted right now. Please try again — or hide it if you need it off the storefront immediately.", options);
+    this.name = "ProductDeleteFailedError";
+    this.productId = productId;
+  }
+}
+
 export async function setManagedProductVisibility(input: { id: string; isActive: boolean }): Promise<void> {
   const client = requireSupabase();
   const context = await vendorContext();
   const { error } = await client.from("products").update({ is_active: input.isActive }).eq("id", input.id).eq("vendor_id", context.vendorId);
-  if (error) throw error;
+  // Hiding is the recovery path offered when a delete is refused, so it must fail just as safely.
+  if (error) throw new VendorFacingError(input.isActive ? "This product could not be made visible right now. Please try again." : "This product could not be hidden right now. Please try again.", { cause: error });
 }
 
 export async function deleteManagedProduct(input: { id: string }): Promise<{ imageRemoved: boolean }> {
   const client = requireSupabase();
   const context = await vendorContext();
   const { data: product, error: readError } = await client.from("products").select("id, image_path").eq("id", input.id).eq("vendor_id", context.vendorId).maybeSingle();
-  if (readError) throw readError;
-  if (!product) throw new Error("This product is no longer available in your vendor catalog.");
+  if (readError) throw new ProductDeleteFailedError(input.id, { cause: readError });
+  if (!product) throw new VendorFacingError("This product is no longer available in your vendor catalog.");
 
   // The database stays authoritative here. The delete policy silently filters out products
   // that order history still references, so a blocked delete returns no error and no rows.
   // Confirm a row actually came back before reporting success or removing the stored image.
+  //
+  // A genuine error is NOT a refusal: it must not be reported as "hide it instead", and its raw
+  // Postgres text must not reach the vendor. Both cases stop before any storage call, so a
+  // product that was not deleted always keeps its stored image.
   const { data: deleted, error: deleteError } = await client.from("products").delete().eq("id", product.id).eq("vendor_id", context.vendorId).select("id");
-  if (deleteError) throw deleteError;
+  if (deleteError) throw new ProductDeleteFailedError(product.id, { cause: deleteError });
   if (!deleted?.length) throw new ProductDeleteBlockedError(product.id);
 
   if (!product.image_path || /^https?:\/\//.test(product.image_path)) return { imageRemoved: !product.image_path };
