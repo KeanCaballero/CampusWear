@@ -529,6 +529,22 @@ export async function updateManagedProduct(input: { id: string; name: string; de
   if (error) throw error;
 }
 
+export class ProductDeleteBlockedError extends Error {
+  readonly productId: string;
+  constructor(productId: string) {
+    super("This product is part of a student order, so it cannot be permanently deleted. Hide it instead so the order history stays intact.");
+    this.name = "ProductDeleteBlockedError";
+    this.productId = productId;
+  }
+}
+
+export async function setManagedProductVisibility(input: { id: string; isActive: boolean }): Promise<void> {
+  const client = requireSupabase();
+  const context = await vendorContext();
+  const { error } = await client.from("products").update({ is_active: input.isActive }).eq("id", input.id).eq("vendor_id", context.vendorId);
+  if (error) throw error;
+}
+
 export async function deleteManagedProduct(input: { id: string }): Promise<{ imageRemoved: boolean }> {
   const client = requireSupabase();
   const context = await vendorContext();
@@ -536,8 +552,12 @@ export async function deleteManagedProduct(input: { id: string }): Promise<{ ima
   if (readError) throw readError;
   if (!product) throw new Error("This product is no longer available in your vendor catalog.");
 
-  const { error: deleteError } = await client.from("products").delete().eq("id", product.id).eq("vendor_id", context.vendorId);
+  // The database stays authoritative here. The delete policy silently filters out products
+  // that order history still references, so a blocked delete returns no error and no rows.
+  // Confirm a row actually came back before reporting success or removing the stored image.
+  const { data: deleted, error: deleteError } = await client.from("products").delete().eq("id", product.id).eq("vendor_id", context.vendorId).select("id");
   if (deleteError) throw deleteError;
+  if (!deleted?.length) throw new ProductDeleteBlockedError(product.id);
 
   if (!product.image_path || /^https?:\/\//.test(product.image_path)) return { imageRemoved: !product.image_path };
   const { error: imageError } = await client.storage.from("product-images").remove([product.image_path]);
@@ -588,6 +608,9 @@ export async function vendorDashboardData() {
     pendingOrders: orders.filter(order => ["pending", "confirmed", "preparing"].includes(order.status)).length,
     readyForPickup: orders.filter(order => order.status === "ready_for_pickup").length,
     lowStock: inventory.filter(item => item.availability !== "in_stock").length,
+    // Surfaced on the dashboard inventory panel. Reuses the inventory already fetched above,
+    // so this adds no extra query.
+    lowStockItems: inventory.filter(item => item.availability !== "in_stock").slice(0, 6),
     todaysSalesInCentavos: orders.filter(order => order.status === "completed" && order.completedAt?.startsWith(today)).reduce((sum, order) => sum + order.totalInCentavos, 0),
     recentOrders: orders.slice(0, 6),
   };

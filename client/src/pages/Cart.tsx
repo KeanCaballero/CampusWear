@@ -1,4 +1,6 @@
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
+import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
+import { isStalledWithoutData } from "@/lib/queryState";
 import { PageIntro } from "@/components/campuswear/PageIntro";
 import { ProductVisual } from "@/components/campuswear/ProductVisual";
 import { StatusBadge } from "@/components/campuswear/StatusBadge";
@@ -42,7 +44,7 @@ export default function Cart() {
           actions={<Button asChild variant="outline" className="w-full sm:w-auto"><Link href="/shop">Continue shopping</Link></Button>}
         />
 
-        {cart.isLoading ? <div className="mt-7 space-y-3"><Skeleton className="h-32 rounded-2xl" /><Skeleton className="h-32 rounded-2xl" /></div> : cart.isError ? <div className="mt-7"><EmptyPanel title="Your cart could not be loaded" detail="We could not confirm the selected items right now. Please try again." action={{ label: "Try again", onClick: () => cart.refetch() }} /></div> : !items.length ? <div className="mt-7"><EmptyPanel title="Your cart is empty" detail="Choose a size from the live campus catalog to start a pickup request." action={{ label: "Browse catalog", onClick: () => setLocation("/shop") }} /></div> : (
+        {cart.isLoading ? <div className="mt-7 space-y-3"><Skeleton className="h-32 rounded-2xl" /><Skeleton className="h-32 rounded-2xl" /></div> : isStalledWithoutData(cart) ? <div className="mt-7"><OfflinePanel title="You are offline" detail="Reconnect to load the items in your cart." onRetry={() => cart.refetch()} /></div> : cart.isError ? <div className="mt-7"><EmptyPanel title="Your cart could not be loaded" detail="We could not confirm the selected items right now. Please try again." action={{ label: "Try again", onClick: () => cart.refetch() }} /></div> : !items.length ? <div className="mt-7"><EmptyPanel title="Your cart is empty" detail="Choose a size from the live campus catalog to start a pickup request." action={{ label: "Browse catalog", onClick: () => setLocation("/shop") }} /></div> : (
           <div className="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
             <section className="space-y-3" aria-label="Cart items">
               {items.map((item, index) => (

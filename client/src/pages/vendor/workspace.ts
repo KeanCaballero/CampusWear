@@ -1,4 +1,4 @@
-import { BellRing, Boxes, ClipboardList, LayoutDashboard, PackagePlus, BarChart3 } from "lucide-react";
+import { BellRing, Boxes, ClipboardList, LayoutDashboard, ListChecks, PackagePlus, BarChart3 } from "lucide-react";
 
 export const vendorNavigation = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/vendor" },
@@ -8,3 +8,5 @@ export const vendorNavigation = [
   { icon: BellRing, label: "Announcements", path: "/vendor/announcements" },
   { icon: BarChart3, label: "Reports", path: "/vendor/reports" },
 ];
+
+export const vendorPrimaryAction = { icon: ListChecks, label: "Fulfillment queue", path: "/vendor/orders" };
