@@ -71,7 +71,25 @@ vi.mock("@/lib/supabase", () => ({
   isSupabaseConfigured: true,
 }));
 
-const { deleteManagedProduct, ProductDeleteBlockedError, setManagedProductVisibility } = await import("@/lib/supabaseCatalog");
+const { deleteManagedProduct, ProductDeleteBlockedError, ProductDeleteFailedError, setManagedProductVisibility, VendorFacingError } = await import("@/lib/supabaseCatalog");
+
+/** The exact error the recursive delete policy produced in production before the fix. */
+const RECURSION_ERROR = {
+  message: 'infinite recursion detected in policy for relation "products"',
+  code: "42P17",
+  details: "",
+  hint: "",
+};
+
+/** Resolves with the thrown error, or fails loudly if the call unexpectedly succeeded. */
+async function captureError(promise: Promise<unknown>): Promise<Error> {
+  try {
+    await promise;
+  } catch (thrown) {
+    return thrown as Error;
+  }
+  throw new Error("expected the deletion to be rejected, but it resolved");
+}
 
 beforeEach(() => {
   harness.scenario.productRow = { id: "product-1", image_path: "vendor-1/product-1/photo.jpg" };
@@ -145,5 +163,110 @@ describe("setManagedProductVisibility — the hide fallback", () => {
   it("deactivates the product without deleting anything", async () => {
     await expect(setManagedProductVisibility({ id: "product-1", isActive: false })).resolves.toBeUndefined();
     expect(harness.scenario.removedPaths).toEqual([]);
+  });
+});
+
+// CASE 1 — a brand-new product, created moments ago, with no orders and no uploaded photo.
+// This is the case the recursive policy broke: it was refused exactly like an order-linked one.
+describe("deleteManagedProduct — brand-new product with zero order history", () => {
+  it("deletes it instead of claiming it is order-linked", async () => {
+    harness.scenario.productRow = { id: "new-product", image_path: null };
+    harness.scenario.deletedRows = [{ id: "new-product" }];
+
+    // `imageRemoved: true` means nothing was left behind — here there was no image to begin with.
+    await expect(deleteManagedProduct({ id: "new-product" })).resolves.toEqual({ imageRemoved: true });
+  });
+
+  it("makes no storage call when the product never had a stored image", async () => {
+    harness.scenario.productRow = { id: "new-product", image_path: null };
+    harness.scenario.deletedRows = [{ id: "new-product" }];
+
+    await deleteManagedProduct({ id: "new-product" });
+
+    expect(harness.scenario.removedPaths).toEqual([]);
+  });
+
+  it("leaves an externally hosted image alone rather than trying to delete a URL", async () => {
+    harness.scenario.productRow = { id: "new-product", image_path: "https://cdn.example/photo.jpg" };
+    harness.scenario.deletedRows = [{ id: "new-product" }];
+
+    // Deletion still succeeds; `imageRemoved: false` flags that a hosted image was left in place.
+    await expect(deleteManagedProduct({ id: "new-product" })).resolves.toEqual({ imageRemoved: false });
+    expect(harness.scenario.removedPaths).toEqual([]);
+  });
+});
+
+// CASE 4 — an unexpected database fault must never be dressed up as a policy refusal, and its
+// raw Postgres text must never reach a vendor.
+describe("deleteManagedProduct — unexpected database errors stay safe", () => {
+  it("reports a vendor-safe message instead of raw Postgres internals", async () => {
+    harness.scenario.deleteError = RECURSION_ERROR;
+
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.toBeInstanceOf(ProductDeleteFailedError);
+  });
+
+  it("never leaks the SQLSTATE text, policy name, or relation name", async () => {
+    harness.scenario.deleteError = RECURSION_ERROR;
+
+    const error = await captureError(deleteManagedProduct({ id: "product-1" }));
+
+    expect(error.message).not.toMatch(/infinite recursion/i);
+    expect(error.message).not.toMatch(/policy for relation/i);
+    expect(error.message).not.toMatch(/42P17/);
+    expect(error.message).not.toContain(RECURSION_ERROR.message);
+  });
+
+  it("preserves the underlying error as `cause` for diagnostics", async () => {
+    harness.scenario.deleteError = RECURSION_ERROR;
+
+    const error = await captureError(deleteManagedProduct({ id: "product-1" }));
+
+    expect(error.cause).toEqual(RECURSION_ERROR);
+  });
+
+  it("does not offer the order-history explanation for a fault that is not a refusal", async () => {
+    harness.scenario.deleteError = RECURSION_ERROR;
+
+    const error = await captureError(deleteManagedProduct({ id: "product-1" }));
+
+    expect(error).not.toBeInstanceOf(ProductDeleteBlockedError);
+    expect(error.message).not.toMatch(/student order/i);
+  });
+
+  it("keeps the stored image when the delete errored", async () => {
+    harness.scenario.deleteError = RECURSION_ERROR;
+
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.toThrow();
+
+    expect(harness.scenario.removedPaths).toEqual([]);
+  });
+
+  it("keeps a failed lookup safe too", async () => {
+    harness.scenario.productRow = null;
+
+    const error = await captureError(deleteManagedProduct({ id: "product-1" }));
+
+    expect(error).toBeInstanceOf(VendorFacingError);
+    expect(error.message).toMatch(/no longer available/i);
+  });
+});
+
+// Every error the UI renders verbatim must be one we wrote.
+describe("vendor-facing error contract", () => {
+  it("marks both delete outcomes as safe to display", async () => {
+    harness.scenario.deletedRows = [];
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.toBeInstanceOf(VendorFacingError);
+
+    harness.scenario.deleteError = RECURSION_ERROR;
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.toBeInstanceOf(VendorFacingError);
+  });
+
+  it("still identifies the refusal specifically so the UI can offer the hide action", async () => {
+    harness.scenario.deletedRows = [];
+
+    const error = await captureError(deleteManagedProduct({ id: "product-1" }));
+
+    expect(error).toBeInstanceOf(ProductDeleteBlockedError);
+    expect(error).toBeInstanceOf(VendorFacingError);
   });
 });

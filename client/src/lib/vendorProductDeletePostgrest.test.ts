@@ -21,6 +21,19 @@ const scenario = {
   requests: [] as RecordedRequest[],
   deleteRows: [] as Array<{ id: string }>,
   productRow: { id: "product-1", image_path: "vendor-1/product-1/photo.jpg" } as Record<string, unknown> | null,
+  /** When set, the DELETE answers with this PostgREST error body instead of rows. */
+  deleteFailure: null as { status: number; body: Record<string, string> } | null,
+};
+
+/** The genuine PostgREST 500 the recursive delete policy returned in production. */
+const RECURSION_FAILURE = {
+  status: 500,
+  body: {
+    code: "42P17",
+    details: "",
+    hint: "",
+    message: 'infinite recursion detected in policy for relation "products"',
+  },
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -46,6 +59,8 @@ const transport: typeof fetch = async (input, init) => {
   }
   if (url.includes("/rest/v1/products")) {
     if (method === "DELETE") {
+      // A policy FAULT is different from a policy refusal: it comes back as a real error status.
+      if (scenario.deleteFailure) return jsonResponse(scenario.deleteFailure.body, scenario.deleteFailure.status);
       // PostgREST returns the rows it actually deleted. RLS-filtered rows simply are not there,
       // and crucially this is a 200, not an error status.
       return jsonResponse(scenario.deleteRows);
@@ -83,7 +98,7 @@ vi.mock("@/lib/supabase", () => ({
   isSupabaseConfigured: true,
 }));
 
-const { deleteManagedProduct, ProductDeleteBlockedError, setManagedProductVisibility } = await import("@/lib/supabaseCatalog");
+const { deleteManagedProduct, ProductDeleteBlockedError, ProductDeleteFailedError, setManagedProductVisibility } = await import("@/lib/supabaseCatalog");
 
 const storageRequests = () => scenario.requests.filter(request => request.url.includes("/storage/v1/object"));
 
@@ -91,6 +106,7 @@ beforeEach(() => {
   scenario.requests = [];
   scenario.deleteRows = [];
   scenario.productRow = { id: "product-1", image_path: "vendor-1/product-1/photo.jpg" };
+  scenario.deleteFailure = null;
 });
 
 describe("PostgREST semantics the fix depends on", () => {
@@ -161,6 +177,58 @@ describe("deleteManagedProduct against the real client — order-linked product"
 
     await expect(deleteManagedProduct({ id: "product-1" })).rejects.toThrow();
     await expect(deleteManagedProduct({ id: "product-1" })).rejects.toThrow();
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.toThrow();
+
+    expect(storageRequests()).toEqual([]);
+  });
+});
+
+// A policy FAULT (as opposed to a refusal) reaches supabase-js as a real PostgrestError, whose
+// `message` is raw Postgres text. This is the exact shape that leaked to vendors in production.
+describe("deleteManagedProduct against the real client — database fault", () => {
+  it("hands back a PLAIN OBJECT carrying raw Postgres text, not an Error instance", async () => {
+    scenario.deleteFailure = RECURSION_FAILURE;
+
+    const raw = await realClient.from("products").delete().eq("id", "product-1").select("id");
+
+    // Establishes the premise: the raw message really does arrive at the client...
+    expect(raw.error?.message).toContain("infinite recursion");
+    // ...but it is NOT an Error, so `error instanceof Error` is useless as a safety filter here.
+    // It silently classifies a real database fault as "unknown", which is how this surfaced in
+    // production as a bare "could not be deleted" with no explanation.
+    expect(raw.error).not.toBeInstanceOf(Error);
+    expect(raw.error?.code).toBe("42P17");
+  });
+
+  it("translates it into a vendor-safe error", async () => {
+    scenario.deleteFailure = RECURSION_FAILURE;
+
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.toBeInstanceOf(ProductDeleteFailedError);
+  });
+
+  it("does not present a database fault as an order-history refusal", async () => {
+    scenario.deleteFailure = RECURSION_FAILURE;
+
+    await expect(deleteManagedProduct({ id: "product-1" })).rejects.not.toBeInstanceOf(ProductDeleteBlockedError);
+  });
+
+  it("keeps the raw Postgres text out of the message the vendor sees", async () => {
+    scenario.deleteFailure = RECURSION_FAILURE;
+
+    let message = "";
+    await deleteManagedProduct({ id: "product-1" }).catch((thrown: Error) => {
+      message = thrown.message;
+    });
+
+    expect(message).not.toContain("infinite recursion");
+    expect(message).not.toContain("42P17");
+    expect(message).not.toContain("policy for relation");
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  it("never touches storage when the delete faulted", async () => {
+    scenario.deleteFailure = RECURSION_FAILURE;
+
     await expect(deleteManagedProduct({ id: "product-1" })).rejects.toThrow();
 
     expect(storageRequests()).toEqual([]);
