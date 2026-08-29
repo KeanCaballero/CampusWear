@@ -8,7 +8,7 @@ describe("vendor dashboard priority markup", () => {
     expect(source).toContain('href: "/vendor/orders"');
     expect(source).toContain('href: "/vendor/inventory"');
     expect(source).toContain('href: "/vendor/reports"');
-    expect(source).toContain('aria-label="Vendor priorities"');
+    expect(source).toContain('aria-label="Store priorities"');
   });
 
   it("keeps pickup-location help connected to the editable vendor field", () => {

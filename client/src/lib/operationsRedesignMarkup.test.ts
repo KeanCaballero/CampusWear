@@ -10,7 +10,7 @@ describe("Pasted Content 11/12 operational redesign", () => {
     expect(products).toContain("ProductPhotoAdjuster");
     expect(products).toContain("Sizes, SKU, and stock");
     expect(products).toContain("Available now");
-    expect(products).toContain("campus-panel");
+    expect(products).toContain("rounded-xl border border-border bg-card");
   });
 
   it("keeps controlled platform approval and school availability operations visible", () => {

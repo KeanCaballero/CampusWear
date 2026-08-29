@@ -1,4 +1,6 @@
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
+import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
+import { isStalledWithoutData } from "@/lib/queryState";
 import { OrderTimeline } from "@/components/campuswear/OrderTimeline";
 import { PageIntro } from "@/components/campuswear/PageIntro";
 import { StatusBadge } from "@/components/campuswear/StatusBadge";
@@ -21,7 +23,7 @@ export default function Orders() {
     <StudentShell>
       <main className="container py-6 sm:py-9">
         <PageIntro eyebrow="ORDER HISTORY" title="Track your pickup." description="Each status is updated by your authorized campus vendor, from request through collection." />
-        {orders.isLoading ? <div className="mt-7 space-y-4"><Skeleton className="h-76 rounded-2xl" /><Skeleton className="h-76 rounded-2xl" /></div> : orders.isError ? <div className="mt-7"><EmptyPanel title="Orders could not be loaded" detail="We could not load your order history right now. Please try again." action={{ label: "Try again", onClick: () => orders.refetch() }} /></div> : orders.data?.length ? (
+        {orders.isLoading ? <div className="mt-7 space-y-4"><Skeleton className="h-76 rounded-2xl" /><Skeleton className="h-76 rounded-2xl" /></div> : isStalledWithoutData(orders) ? <div className="mt-7"><OfflinePanel title="You are offline" detail="Reconnect to load your orders and pickup status." onRetry={() => orders.refetch()} /></div> : orders.isError ? <div className="mt-7"><EmptyPanel title="Orders could not be loaded" detail="We could not load your order history right now. Please try again." action={{ label: "Try again", onClick: () => orders.refetch() }} /></div> : orders.data?.length ? (
           <section className="mt-7 space-y-5" aria-label="Your orders">
             {orders.data.map(order => (
               <article key={order.id} className="campus-panel overflow-hidden">

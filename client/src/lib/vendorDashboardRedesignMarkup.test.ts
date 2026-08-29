@@ -5,15 +5,16 @@ const dashboard = readFileSync(new URL("../pages/vendor/VendorDashboard.tsx", im
 
 describe("Pasted Content 11/12 vendor-dashboard redesign", () => {
   it("keeps operational priority cards and the real pickup location update workflow", () => {
-    expect(dashboard).toContain("Orders needing action");
-    expect(dashboard).toContain("Low or out of stock");
+    expect(dashboard).toContain("Pending orders");
+    expect(dashboard).toContain("Low stock alerts");
+    expect(dashboard).toContain("Ready for pickup");
     expect(dashboard).toContain("savePickupLocation.mutate(pickupDraft)");
     expect(dashboard).toContain("Vendor-managed");
   });
 
   it("uses the shared operational page framing and semantic visual system", () => {
     expect(dashboard).toContain("<PageIntro");
-    expect(dashboard).toContain("campus-panel campus-panel-interactive");
+    expect(dashboard).toContain("rounded-xl border border-border bg-card");
     expect(dashboard).not.toContain("bg-[#dce9f8]");
   });
 });

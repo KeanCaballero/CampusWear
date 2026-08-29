@@ -2,6 +2,7 @@ import { Bell, Home, Megaphone, PackageSearch, ShoppingBag, UserRound } from "lu
 import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { BrandMark } from "./BrandMark";
+import { OfflineNotice } from "./OfflineNotice";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canUseStudentWorkspace, destinationForRole } from "@/lib/authRouting";
 
@@ -102,6 +103,8 @@ export function StudentShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      <OfflineNotice />
 
       <div id="campuswear-main" tabIndex={-1} className="outline-none">
         {children}

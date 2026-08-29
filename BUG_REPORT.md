@@ -738,3 +738,368 @@ A subsequent re-authenticated vendor Products view rendered `0 products`, but th
 The vendor Products page now includes an accessible, confirmation-gated **Delete product** action. The client mutation is scoped to the authenticated vendor context and attempts to remove the associated stored image after successful product deletion. The live CampusWear Supabase project contains a `DELETE` policy on `public.products` for authenticated vendor staff that requires `private.is_vendor_staff(vendor_id)` and rejects products referenced by `public.order_items` through `public.product_variants`; order-linked products must be hidden instead.
 
 Focused delete-contract coverage passed, the full regression suite passed with **97 tests across 43 files**, strict TypeScript passed, and the production build passed. The control is implemented in the current source but still requires deployment before it is available in the current live release. The temporary QA product is currently hidden from the student-facing catalog, but its physical deletion and image cleanup are not confirmed. The previous exact-record deletion attempt was rejected by a read-only transaction; no unrelated data was changed. Publish the updated source, then use the authorized vendor account’s confirmation dialog for future deletion, or provide a writable owner-level cleanup path for the existing QA record.
+
+## BUG-017 — Vendor product deletion reported success while the product survived
+
+**Reported:** 29 August 2026 — "when I delete the product it will not delete… but when I refresh, the products are back."
+**Classification:** frontend (data-layer result handling). No RLS, policy, RPC, or schema change was required.
+**Status:** FIXED IN SOURCE — deployment verification still required.
+
+### What was happening
+
+Deleting a product that a student order references showed **"Product deleted."**, removed the row from the on-screen list, and deleted the product photo from Supabase Storage. Refreshing brought the product back, now missing its image.
+
+### Root cause
+
+The `DELETE` policy on `public.products` blocks order-linked products through its `USING` clause. An RLS `USING` failure on `DELETE` is **not an error** — PostgREST filters the row out and returns success with zero rows affected. `deleteManagedProduct` treated "no error" as "deleted", so it reported success and then removed the stored image. The `onError` branch that advised hiding the product could never fire.
+
+The migration comment claiming `order_items` "prevents deletion" was also inaccurate: `order_items.variant_id` is `on delete set null`, not `restrict`. Historical order integrity is preserved by the RLS policy plus the `product_name` / `variant_size` snapshot columns on `order_items`, not by a foreign-key restriction.
+
+### Fix
+
+`client/src/lib/supabaseCatalog.ts` — the delete now requests its affected rows back (`.delete()….select("id")`) and treats an empty result as a refusal, throwing a typed `ProductDeleteBlockedError` **before** any storage call. The database remains the sole authority; the client simply stops misreading it. A `setManagedProductVisibility` helper was added so the vendor gets the correct hide action.
+
+`client/src/pages/vendor/VendorProducts.tsx` — a blocked deletion now shows the real reason with a **"Hide instead"** toast action that deactivates the product, leaving order history untouched.
+
+**No migration was applied.** The existing policy already enforces the rule correctly, so this fix works against the current live database without a deployment to Supabase.
+
+### Verification
+
+`client/src/lib/vendorProductDeleteBehavior.test.ts` — 9 behavioral tests over a mocked Supabase client covering: deletion succeeding with image cleanup, deletion blocked with **no** image removal, the blocked message naming the hide remedy, genuine database errors staying distinguishable from blocks, and out-of-catalog products being refused.
+
+### Outstanding
+
+Not yet exercised against the live database with a real vendor account and a genuinely order-linked product. Optional hardening — a `BEFORE DELETE` trigger or `on delete restrict` — would make the guarantee independent of the RLS policy, but requires a migration against the correct CampusWear Supabase project.
+
+## BUG-018 — Mobile workspace navigation drawer was transparent
+
+**Reported:** 29 August 2026 — dashboard content visible through the mobile vendor/admin drawer.
+**Classification:** responsive/UI (design tokens plus component composition).
+**Status:** FIXED IN SOURCE — deployment verification still required.
+
+### Root cause
+
+Two independent defects combined:
+
+1. The `--sidebar*` design tokens were never defined in `client/src/index.css`. Under Tailwind v4 the `@theme inline` block declared no sidebar colours, so `bg-sidebar`, `text-sidebar-foreground`, and `border-sidebar-border` were **not emitted as CSS at all**. Worse, `cn()`/tailwind-merge classifies `bg-sidebar` as a background-colour utility and therefore stripped `SheetContent`'s own `bg-background`, leaving the drawer with no background whatsoever.
+2. `client/src/components/ui/sidebar.tsx` hardcoded `SheetContent`'s `className` in its mobile branch and spread `{...props}` onto the Radix `Sheet` root instead of the content, so the `bg-primary` that `DashboardLayout` passes reached the desktop sidebar but was discarded on mobile.
+
+Desktop was unaffected because `DashboardLayout`'s class landed on the outer container.
+
+### Fix
+
+- `client/src/index.css` — defines the full opaque sidebar token set (`--sidebar: #0f2747` and companions, gold focus ring) and maps them into `@theme inline` so the utilities compile.
+- `client/src/components/ui/sidebar.tsx` — merges the caller's `className` into `SheetContent` and forwards remaining props to the drawer surface rather than the dialog root.
+
+### Verification
+
+Confirmed in the compiled stylesheet: `.bg-sidebar{background-color:var(--sidebar)}` with `--sidebar:#0f2747` now exists in `dist/public/assets`, alongside `.border-sidebar-border`, `.ring-sidebar-ring`, and `.text-sidebar-foreground`. Before the fix none of these rules were emitted. `client/src/lib/workspaceDrawerOpacity.test.ts` guards the root cause: the token must exist, must be a fully opaque hex, must be exposed to Tailwind, and the mobile branch must merge the caller's classes.
+
+Not yet visually confirmed in a real mobile browser session.
+
+## Vendor workspace redesign — Stitch reference alignment (29 August 2026)
+
+Applied to the vendor shell and dashboard only. Routes, Supabase queries, RPCs, authentication, `WorkspaceGate` role enforcement, inventory logic, and order logic are unchanged.
+
+- **Shell** (`DashboardLayout.tsx`): navy sidebar driven by the new tokens, brand header retaining the existing `BrandMark` logo, workspace eyebrow, Stitch nav treatment with a gold active accent on CampusWear blue, an optional `primaryAction` CTA ("Fulfillment queue", wired for vendor pages only), and an opaque mobile header.
+- **Dashboard** (`VendorDashboard.tsx`): Stitch stat cards (Today's sales, Pending orders, Ready for pickup, Low stock alerts) with the low-stock card carrying error emphasis, then the Stitch bento — a Recent orders table spanning two columns beside an Inventory alert panel. The orders table renders as a real table from `md` up and as a stacked list below it, so mobile never scrolls horizontally. The pickup-location workflow was retained in full.
+- **Data:** every value comes from `vendorDashboardData`. `lowStockItems` was added to that aggregate and reuses the inventory already fetched, so no extra query was introduced. No production data was invented; each panel has a real empty state.
+
+### Deliberately not done
+
+- **Store Profile and Settings** appear in the Stitch navigation but have no routes in CampusWear. Store Profile remains deferred pending the correct Supabase management connection. They were not added, because dead navigation entries would be worse than their absence.
+- **The Stitch desktop top app bar** (search, notifications, avatar) was not introduced. It would restructure the chrome of every vendor and admin page, which exceeds the scope of this change.
+- **Customer names** in the orders table were not added. That data is not in the current vendor query and surfacing student identities warrants a separate privacy and RLS review.
+- **The Claude Design logo system** could not be imported: `DesignSync` requires `/design-login`, which cannot run in a non-interactive session. The existing `BrandMark` logo was preserved untouched.
+
+## BUG-019 — Unlayered global border reset silently defeated every border colour in the app
+
+**Found:** 29 August 2026, while visually verifying the BUG-018 drawer fix in a real browser.
+**Classification:** frontend (CSS cascade / Tailwind v4 layering). Pre-existing; not introduced by the redesign.
+**Status:** FIXED IN SOURCE — deployment verification still required.
+
+### What was happening
+
+No `border-<colour>` utility anywhere in CampusWear had any effect. Measured in Chrome against the compiled production stylesheet, `border-transparent`, `border-campus-gold`, `border-sidebar-border`, and `border-destructive/30` **all** computed to `rgb(217, 226, 236)` — the default `--border` grey.
+
+Visible symptom: inactive workspace navigation items rendered a pale grey crescent where the accent bar should have been invisible, and the gold active accent never appeared at all.
+
+### Root cause
+
+`client/src/index.css` declared the reset at the top level:
+
+```css
+* { box-sizing: border-box; border-color: var(--border); }
+```
+
+Tailwind v4 emits utilities into `@layer utilities`. In the CSS cascade an **unlayered** rule outranks every layered rule regardless of specificity, so this universal selector beat all of them. This had been latent since the stylesheet was written; it only became visible once the redesign relied on `border-transparent` and a gold accent.
+
+### Fix
+
+Wrapped the reset in `@layer base`. Layer order then places utilities after base, so explicit border colours win while elements with a bare `border` still fall back to the grey default. One-line scope change; no utility classes were altered.
+
+### Verification
+
+Measured in the browser before and after against the compiled stylesheet:
+
+| Element | Before | After |
+|---|---|---|
+| Active nav accent | `rgb(217, 226, 236)` | `rgb(244, 185, 66)` — gold |
+| Inactive nav accent | `rgb(217, 226, 236)` | `rgba(0, 0, 0, 0)` — transparent |
+| Drawer right border | `rgb(217, 226, 236)` | `rgb(34, 64, 107)` — sidebar border |
+
+Guarded by `client/src/lib/workspaceDrawerOpacity.test.ts`, which asserts the reset stays inside `@layer base` and that no unlayered universal border reset is reintroduced.
+
+## BUG-018 verification record — 29 August 2026
+
+Rendered the drawer against the **compiled production stylesheet** in Chrome at a 375×812 mobile viewport, with page content deliberately left in the DOM behind it.
+
+- Drawer background: `rgb(15, 39, 71)` — no alpha channel, `opacity: 1`
+- Content behind the drawer remained in the DOM and was **not** visible through it
+- Active item: gold accent on CampusWear blue; inactive items: no visible border artefact
+
+Vendor, school-admin, and platform-admin workspaces all render through the same `DashboardLayout` shell, so all three inherit the fix. Navigation destinations for each were asserted intact, and the vendor-only fulfillment CTA was confirmed not to leak into either admin workspace. Desktop was checked for regression: `--sidebar` resolves to the same navy the shell previously hardcoded, and the resize affordance is now desktop-only.
+
+## BUG-017 verification record — 29 August 2026
+
+Re-verified against the **real `@supabase/supabase-js` client** — real `PostgrestClient`, real `StorageClient`, real verb and header construction — driven by a stubbed transport replaying genuine PostgREST response shapes (`client/src/lib/vendorProductDeletePostgrest.test.ts`).
+
+Confirmed:
+
+1. An RLS-filtered `DELETE` returns `{ data: [], error: null }` — success with zero rows, exactly the premise the fix rests on.
+2. The client sends `Prefer: return=representation`, which is what makes a filtered delete detectable at all.
+3. A blocked delete issues **no** storage request whatsoever, including across repeated attempts.
+4. The delete is scoped to `id=eq.<product>` **and** `vendor_id=eq.<vendor>`.
+5. `setManagedProductVisibility` issues a vendor-scoped `PATCH` of `{"is_active": false}` through the pre-existing "vendor staff update products" policy — no delete, no storage call, no new policy.
+
+Order-history integrity is covered separately by `client/src/lib/orderHistoryIntegrity.test.ts`: `order_items` stores its own `product_name`, `variant_size`, unit price, and quantity; both the student and vendor history queries read those snapshots and never join `products` or `product_variants`; and `get_public_catalog` filters on `p.is_active`, so hiding genuinely removes a product from the student catalogue while its orders stay readable.
+
+**No migration was added.** The existing RLS policy already enforces the rule; the defect was entirely in how the client read the response.
+
+## Vendor workspace redesign — phase 2 (29 August 2026)
+
+Stitch surface language extended from the dashboard to **Vendor Products, Vendor Inventory, and Vendor Orders**. Presentation layer only — no data flow, business logic, query, or accessibility attribute was changed.
+
+- `campus-panel` replaced with the Stitch card surface (`rounded-xl border border-border bg-card`) across the three pages.
+- Radius normalised from `rounded-2xl` to `rounded-xl` for consistency with the redesigned dashboard.
+- Ad-hoc palette entries moved onto brand tokens: the product visibility pill from `emerald` to `bg-secondary text-campus-blue`, destructive hovers from `rose-50` to `destructive/10`, and the inventory advisory panel from `amber-*` to `campus-gold`.
+- Conflicting duplicate `border`/`bg` utilities introduced by the surface swap were de-duplicated; these are raw class strings with no `cn()` merge, so cascade order would otherwise have been undefined.
+
+Still to do in the priority order supplied: Student Home / Browse, Product Details, Cart / Checkout, Order Tracking, Admin screens.
+
+## BUG-020 — Paused (offline) queries rendered as "no products found"
+
+**Found:** 29 August 2026, while visually verifying the redesigned student catalogue.
+**Classification:** frontend (data-state handling). Pre-existing; not introduced by the redesign.
+**Status:** FIXED on the student journey — the same pattern remains on other screens.
+
+### What was happening
+
+With TanStack Query's default `networkMode: "online"`, a request made with no connection is **paused**, not failed: `status` stays `"pending"` while `fetchStatus` becomes `"paused"`. In that state `isLoading` is false, `isError` is false, and `data` is `undefined`.
+
+Every screen using the usual `isLoading → isError → data.length → empty` chain therefore falls straight through to the **empty** branch. A student with no signal was told *"0 items found — No products found"* on the catalogue, and *"The catalog is getting ready"* on the home screen, rather than that they were offline. This is precisely the mobile-first context the student experience targets.
+
+Captured from the running production build:
+
+```
+["supabase-catalog",""]        status: "pending"   fetchStatus: "paused"
+["supabase-catalog-categories"] status: "pending"  fetchStatus: "paused"
+```
+
+…while the page rendered "0 items found / No products found".
+
+### Fix
+
+Added `client/src/components/campuswear/OfflinePanel.tsx` and a dedicated branch, ordered before the error and empty branches, on both student screens. The flag is `isPaused && !data`, so cached results are still shown when a background refetch pauses. Shop's live result count now reads "Waiting for a connection…" instead of "0 items found".
+
+### Verification
+
+Reproduced in the browser by putting the page offline and refetching: the catalogue rendered **"You appear to be offline / Reconnect to check live sizes and stock for your campus"** with a working retry, where it previously rendered the empty state. The error path was separately confirmed to still render "The catalog could not be loaded". Guarded by `client/src/lib/studentQueryStates.test.ts`.
+
+### Outstanding
+
+The same three-branch pattern is still present on Cart, Orders, Notifications, Announcements, Product Detail, the vendor screens, and the admin screens. Those were left untouched under the current change-scope rule and should be swept deliberately.
+
+## StudentHome missing error states — fixed 29 August 2026
+
+`StudentHome` had no `isError` branch for either its catalogue or its announcements query. A failure fell through to the empty branch and reported *"The catalog is getting ready"* — a load failure presented as an empty campus. Both queries now have explicit error states with retry actions, verified rendering in the browser.
+
+## Student journey redesign — phase 3 (29 August 2026)
+
+**Student Home and Shop / Browse** redesigned in the Stitch visual language, mobile-first. Routes, Supabase queries, authentication, RLS, role behaviour, search and category filtering, and product navigation are all unchanged.
+
+- Stitch typography scale, card surfaces, and the navy/blue/gold brand palette applied; the existing `BrandMark` logo is untouched.
+- Hero simplified — two purely decorative floating shapes removed in favour of a single `aria-hidden` grid layer, keeping the "not over-designed" brand direction.
+- A catalogue search field was added to the student hero. It deep-links to `/shop?q=…`, and Shop now seeds its search from that parameter. Absent the parameter, behaviour is exactly as before.
+- Touch targets raised to the 44px minimum: filter chips and the clear-filters control moved from `min-h-10` to `min-h-11`; the search field is 48px.
+- Card hover reduced from translate + shadow to shadow only, matching the vendor redesign and the "avoid excessive animation" direction.
+
+### Verified in a browser against the production build
+
+| Viewport | Result |
+|---|---|
+| Mobile 375×812 | 2-column grid, bottom nav visible, **no horizontal overflow** (scrollWidth 375 = viewport) |
+| Tablet 768×1024 | 3-column grid, desktop nav shown, bottom nav `display: none`, no overflow |
+| Desktop 1440×900 | 4-column grid, inline search, no overflow |
+
+States exercised end to end: **loading** (skeletons), **offline** (paused query), **error** (retry panel), and **empty**. Search deep-link confirmed: `/shop?q=uniform` seeded the field with `uniform`. Smallest interactive control measured 44px; search field 48px.
+
+## BUG-020 sweep — app-wide, 30 August 2026
+
+The paused-query defect documented above was swept across every data-driven screen.
+
+### Approach
+
+The pattern was surveyed before anything was changed. Every screen used the same chain —
+`X.isLoading ? skeleton : X.isError ? panel : data.length ? list : empty` — with only the
+markup differing (skeleton shapes, grids vs tables). That split decided the design:
+
+- **State derivation is identical everywhere → abstracted.** `client/src/lib/queryState.ts`
+  is a pure module (`isOfflineWithoutData`, `isOfflineWithData`, `resolveQueryPhase`,
+  `showsStaleData`) holding the whole five-state model in one testable place.
+- **Markup differs per screen → not abstracted.** No shared render wrapper was forced on
+  pages with genuinely different layouts. Each screen keeps its own skeletons and panels and
+  simply calls the shared predicate.
+- **"Cached data + offline" is page-independent → handled once per shell.** `OfflineNotice`
+  renders in `StudentShell` and `DashboardLayout` only — two insertions covering every screen,
+  rather than a banner copy-pasted into seventeen pages.
+
+### The five states
+
+| State | Behaviour |
+|---|---|
+| Loading | existing per-screen skeletons, unchanged |
+| Offline, no cache | `OfflinePanel` with a retry — **never** the empty state |
+| Offline, cached data | cached view stays on screen, `OfflineNotice` banner explains why it may be stale, Reconnect refetches |
+| Error | real error panel with retry, unchanged |
+| Empty | only when the request actually resolved with nothing |
+
+### Screens covered
+
+Student — Home, Shop/Browse, Product Detail, Cart, Orders, Announcements, Notifications.
+Vendor — Dashboard (both queries, including the inline pickup-location field), Orders,
+Inventory, Products, Reports, Application.
+Admin — School Admin, Platform Admin, Platform Accounts, Platform Team.
+
+`Profile` issues no queries and is therefore out of scope; the sweep test asserts that rather
+than leaving it unexplained.
+
+**`VendorApplication` had no error branch at all** — a failed or paused query rendered "No
+application submitted", telling a vendor awaiting approval that their application did not
+exist. It now has both an offline and an error branch.
+
+### Connectivity signal
+
+`useIsOffline` combines `onlineManager` with a query-cache subscription that checks for any
+query at `fetchStatus: "paused"`. Runtime verification showed the paused state outliving the
+connectivity flag: the banner claimed the app was online while the page was simultaneously
+rendering an offline panel. Keying off the paused queries themselves keeps the banner and the
+per-screen surfaces consistent by construction. `navigator.onLine` is deliberately not used —
+it can disagree with the signal that actually decides whether a query runs.
+
+### Follow-up found during review
+
+`Shop`'s live result count fell through to `"0 items found"` whenever the catalogue query
+errored, announcing an authoritative zero in an `aria-live` region directly above "The catalog
+could not be loaded". Same misreporting class, fixed and guarded by a test.
+
+### Verification
+
+TypeScript clean. **264 of 265 tests pass** across 49 files — the single failure is the
+pre-existing `VITE_SUPABASE_URL` environment gap, unrelated to this work. Production build
+passes.
+
+Runtime verification against the built bundle at 375×812:
+
+| State | Result |
+|---|---|
+| Loading | skeletons render |
+| Offline, no cache | "You appear to be offline" panel + banner; **no** "No products found" |
+| Offline, cached/static content | banner over content that stays rendered, Reconnect present |
+| Error | "The catalog could not be loaded" + retry; count no longer claims a number |
+
+`/vendor`, `/platform`, and `/admin` were confirmed to render their authentication gate
+without errors. Their offline states could **not** be exercised in the browser — those screens
+require a real Supabase session, which this environment has no credentials for. They share the
+identical `isOfflineWithoutData` helper and `OfflineNotice` shell component, both covered by
+tests, but that is not a substitute for a signed-in pass.
+
+## BUG-020 correction — a paused fetch does not always mean "offline" (30 August 2026)
+
+Runtime verification of the sweep exposed an error in the sweep's own first implementation.
+
+### What was wrong
+
+The first pass equated `fetchStatus: "paused"` with "the user is offline", and the global banner
+additionally treated *any* paused query as proof of being offline. Reading the TanStack retryer
+shows the real rule:
+
+```js
+canContinue = () => focusManager.isFocused()
+  && (config.networkMode === "always" || onlineManager.isOnline())
+  && config.canRun()
+```
+
+A fetch is therefore paused when the browser is offline **and also** when a retry is waiting on
+window focus. Measured in a real browser with the API returning HTTP 500:
+
+```
+document.visibilityState : "hidden"
+document.hasFocus()      : false
+onlineManager.isOnline() : true
+["supabase-catalog",""]  : status "pending", fetchStatus "paused", error null
+```
+
+So a backgrounded tab hitting a **server outage** was being told "You appear to be offline" —
+the mirror image of the original defect, and a contradiction waiting to happen between the
+banner and the page.
+
+### The correction
+
+- The predicates are named for what they observe: `isStalledWithoutData` / `isStalledWithData`.
+  A stalled query only means "there is nothing to render yet".
+- **Only live connectivity decides offline wording.** `useIsOffline` reads `onlineManager` alone —
+  not `navigator.onLine`, and no longer "any paused query".
+- `OfflinePanel` consumes that same signal: offline shows the caller's offline copy; online but
+  stalled shows "Still trying to load this" with a retry. Banner and panel therefore cannot
+  disagree, because both derive from one source.
+- Shop's status region says "Still checking availability…" while stalled rather than asserting a
+  connection problem.
+
+## BUG-020 sweep — runtime verification (30 August 2026)
+
+Verified against the production build driven by a **local Supabase test double** (synthetic
+"QA Fixture …" data, local-only, never committed). This allowed real sessions and real data,
+with no production credentials involved.
+
+| Screen | Loading | Offline, no cache | Offline, cached | Error | Empty | Success |
+|---|---|---|---|---|---|---|
+| Student — Shop | verified | verified | verified | verified | verified | verified |
+| Vendor — Dashboard / Orders | verified | verified | verified | — | — | verified |
+| Admin — Platform / Accounts | verified | verified | verified | verified | verified | verified |
+| Vendor Application | verified | verified | — | verified | verified | verified |
+
+Representative measurements:
+
+- **Offline with cache** (student and vendor): cached rows stayed on screen, banner shown with a
+  working Reconnect, and no empty or error surface appeared.
+- **Offline without cache**: "You are offline" plus the screen's own detail copy and a retry;
+  never the empty state.
+- **Error** (server 500, tab focused): real error panels — "Availability could not be checked",
+  "Platform data is unavailable", "Your application status is unavailable" — with no offline claim.
+- **Empty** (request succeeded, zero rows): "No products found", "No schools configured",
+  "No vendor applications" — correct, and distinct from the offline case.
+
+### Fixed during verification
+
+`VendorApplication` renders its own chrome rather than a workspace shell, so it never received
+the global offline banner. It now renders `<OfflineNotice />` directly, and a test asserts every
+data-driven screen reaches the banner either through a shell or directly.
+
+### Known behaviour worth a decision
+
+When the **profile lookup itself** fails, role resolution falls back to `pending_assignment` and
+the workspace gate redirects to `/profile`. During a total backend outage an administrator is
+therefore bounced to their profile page rather than shown "Platform data is unavailable". This is
+pre-existing authorization routing, not part of this sweep, and it is arguably correct — the app
+cannot confirm authorization — but the silent redirect gives no explanation.

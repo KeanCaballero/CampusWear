@@ -11,10 +11,13 @@ describe("catalog filter markup", () => {
   });
 
   it("uses a touch-ready search and clear-filter control with a live result count", () => {
-    expect(source).toContain('className="h-12 border-border bg-card pl-10"');
+    expect(source).toContain('className="min-h-12 border-border bg-card pl-10"');
     expect(source).toContain('role="status"');
+    expect(source).toContain('aria-live="polite"');
     expect(source).toContain("Clear filters");
-    expect(source).toContain('className="min-h-10"');
-    expect(source).not.toContain('className="min-h-10 bg-card"');
+    // Every filter control must clear the 44px touch-target minimum.
+    expect(source).toContain('className="min-h-11 rounded-full px-4"');
+    expect(source).toContain('className="min-h-11 gap-1.5 text-campus-blue"');
+    expect(source).not.toMatch(/className="min-h-(?:[0-9]|10)"/);
   });
 });
