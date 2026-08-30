@@ -437,13 +437,15 @@ export async function updateCartItem(input: { variantId: string; quantity: numbe
   const cart = await currentCart();
   if (!cart) throw new UserFacingError("Your cart is no longer available. Refresh the page to start again.");
   if (input.quantity <= 0) {
-    const { error } = await client.from("cart_items").delete().eq("cart_id", cart.id).eq("variant_id", input.variantId);
+    const { data: removed, error } = await client.from("cart_items").delete().eq("cart_id", cart.id).eq("variant_id", input.variantId).select("variant_id");
     if (error) throw new UserFacingError("We could not remove that item. Please try again.", { cause: error });
+    if (!removed?.length) throw new UserFacingError("That item is no longer in your cart. Refresh to see the latest version.");
     return;
   }
   // The 10-unit cap is enforced here as well as in the UI so a stale page cannot exceed it.
-  const { error } = await client.from("cart_items").update({ quantity: Math.min(10, input.quantity) }).eq("cart_id", cart.id).eq("variant_id", input.variantId);
+  const { data: changed, error } = await client.from("cart_items").update({ quantity: Math.min(10, input.quantity) }).eq("cart_id", cart.id).eq("variant_id", input.variantId).select("variant_id");
   if (error) throw new UserFacingError("We could not update that quantity. Please try again.", { cause: error });
+  if (!changed?.length) throw new UserFacingError("That item is no longer in your cart. Refresh to see the latest version.");
 }
 
 export type PlacedOrder = { id: string; orderNumber: string; totalInCentavos: number; pickupLocation: string };
@@ -680,14 +682,29 @@ export async function createManagedProduct(input: VendorProductInput): Promise<M
 
 export async function updateManagedProduct(input: { id: string; name: string; description: string; priceInCentavos: number; isActive: boolean }): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.from("products").update({ name: input.name.trim(), description: input.description.trim(), price_in_centavos: input.priceInCentavos, is_active: input.isActive }).eq("id", input.id);
+  const { data: updated, error } = await client.from("products").update({ name: input.name.trim(), description: input.description.trim(), price_in_centavos: input.priceInCentavos, is_active: input.isActive }).eq("id", input.id).select("id");
   if (error) throw error;
+  // Vendor ownership stays enforced by the products UPDATE policy, not by a client predicate.
+  assertWriteTouchedARow(updated, "That product could not be updated. Refresh your catalog and try again.");
 }
 
 /**
  * Vendor-workspace flavour of {@link UserFacingError}. Kept as its own class so vendor screens can
  * narrow to it, but it shares the base so one `instanceof UserFacingError` check covers the app.
  */
+/**
+ * PostgREST answers 200 with an empty array when an UPDATE or DELETE matches no rows, so an
+ * RLS-filtered write is indistinguishable from a successful one unless a representation is
+ * requested. Each write below therefore ends in `.select(...)` and passes the result here, so a
+ * no-op is reported as a failure rather than a success the user cannot see.
+ *
+ * INSERT is deliberately not covered: an RLS-blocked insert raises 42501 rather than matching zero
+ * rows, so it already surfaces as a real error.
+ */
+function assertWriteTouchedARow(rows: unknown[] | null | undefined, message: string): void {
+  if (!rows?.length) throw new VendorFacingError(message);
+}
+
 export class VendorFacingError extends UserFacingError {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -721,9 +738,12 @@ export class ProductDeleteFailedError extends VendorFacingError {
 export async function setManagedProductVisibility(input: { id: string; isActive: boolean }): Promise<void> {
   const client = requireSupabase();
   const context = await vendorContext();
-  const { error } = await client.from("products").update({ is_active: input.isActive }).eq("id", input.id).eq("vendor_id", context.vendorId);
+  const { data: updated, error } = await client.from("products").update({ is_active: input.isActive }).eq("id", input.id).eq("vendor_id", context.vendorId).select("id");
   // Hiding is the recovery path offered when a delete is refused, so it must fail just as safely.
   if (error) throw new VendorFacingError(input.isActive ? "This product could not be made visible right now. Please try again." : "This product could not be hidden right now. Please try again.", { cause: error });
+  // This is the fallback offered when a delete is refused, so a silent no-op would tell the vendor a
+  // product is hidden from students while it is still on sale.
+  assertWriteTouchedARow(updated, input.isActive ? "This product could not be made visible. Refresh your catalog and try again." : "This product could not be hidden. Refresh your catalog and try again.");
 }
 
 export async function deleteManagedProduct(input: { id: string }): Promise<{ imageRemoved: boolean }> {
@@ -756,8 +776,11 @@ export async function uploadProductImage(input: { productId: string; file: File 
   const path = `${context.vendorId}/${input.productId}/${crypto.randomUUID()}.${extension}`;
   const { error: uploadError } = await client.storage.from("product-images").upload(path, input.file, { contentType: input.file.type, upsert: false });
   if (uploadError) throw uploadError;
-  const { error: updateError } = await client.from("products").update({ image_path: path }).eq("id", input.productId);
+  const { data: updated, error: updateError } = await client.from("products").update({ image_path: path }).eq("id", input.productId).select("id");
   if (updateError) throw updateError;
+  // The file uploaded; if the row did not accept the new path the vendor must not be told the
+  // photo was saved.
+  assertWriteTouchedARow(updated, "The photo uploaded but could not be attached to that product. Refresh your catalog and try again.");
   return imageUrlFor(path) ?? "";
 }
 
@@ -772,8 +795,9 @@ export async function listVendorInventory(): Promise<VendorInventoryItem[]> {
 
 export async function updateVendorInventory(input: { variantId: string; quantity: number; lowStockThreshold: number }): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.from("inventory").update({ quantity: Math.max(0, input.quantity), low_stock_threshold: Math.max(0, input.lowStockThreshold), updated_at: new Date().toISOString() }).eq("variant_id", input.variantId);
+  const { data: updated, error } = await client.from("inventory").update({ quantity: Math.max(0, input.quantity), low_stock_threshold: Math.max(0, input.lowStockThreshold), updated_at: new Date().toISOString() }).eq("variant_id", input.variantId).select("variant_id");
   if (error) throw error;
+  assertWriteTouchedARow(updated, "That size could not be updated. Refresh your inventory and try again.");
 }
 
 export type VendorAnnouncement = { id: string; title: string; body: string; createdAt: string; updatedAt: string };
@@ -906,8 +930,9 @@ export async function schoolAdminOverview() {
 
 export async function setVendorAuthorization(input: { vendorId: string; isAuthorized: boolean }): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.from("vendors").update({ is_authorized: input.isAuthorized }).eq("id", input.vendorId);
+  const { data: updated, error } = await client.from("vendors").update({ is_authorized: input.isAuthorized }).eq("id", input.vendorId).select("id");
   if (error) throw error;
+  assertWriteTouchedARow(updated, "That vendor's authorization could not be changed. Refresh the list and try again.");
 }
 
 export async function publishSchoolAnnouncement(input: { title: string; body: string }): Promise<void> {

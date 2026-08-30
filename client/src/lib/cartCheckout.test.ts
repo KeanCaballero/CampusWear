@@ -19,6 +19,8 @@ const harness = vi.hoisted(() => {
     catalogError: null as { message: string } | null,
     writes: [] as Array<{ op: string; payload?: unknown; variantId?: string }>,
     writeError: null as { message: string } | null,
+    /** false models an RLS-filtered write: PostgREST answers 200 with zero rows. */
+    writeMatchesRow: true,
     rpcCalls: [] as Array<{ name: string; args: unknown }>,
     checkoutRows: [] as any[],
     checkoutError: null as { message: string; code?: string } | null,
@@ -48,14 +50,14 @@ const harness = vi.hoisted(() => {
         builder.delete = () => {
           const b = thenable(() => {
             scenario.writes.push({ op: "delete", variantId: b.__variantId });
-            return { data: null, error: scenario.writeError };
+            return { data: scenario.writeMatchesRow ? [{ variant_id: b.__variantId }] : [], error: scenario.writeError };
           });
           return b;
         };
         builder.update = (payload: unknown) => {
           const b = thenable(() => {
             scenario.writes.push({ op: "update", payload, variantId: b.__variantId });
-            return { data: null, error: scenario.writeError };
+            return { data: scenario.writeMatchesRow ? [{ variant_id: b.__variantId }] : [], error: scenario.writeError };
           });
           return b;
         };
@@ -122,6 +124,7 @@ beforeEach(() => {
   harness.scenario.catalogError = null;
   harness.scenario.writes = [];
   harness.scenario.writeError = null;
+  harness.scenario.writeMatchesRow = true;
   harness.scenario.rpcCalls = [];
   harness.scenario.checkoutRows = [];
   harness.scenario.checkoutError = null;
