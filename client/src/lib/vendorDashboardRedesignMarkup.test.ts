@@ -13,8 +13,18 @@ describe("Pasted Content 11/12 vendor-dashboard redesign", () => {
   });
 
   it("uses the shared operational page framing and semantic visual system", () => {
-    expect(dashboard).toContain("<PageIntro");
-    expect(dashboard).toContain("rounded-xl border border-border bg-card");
+    // The page framing moved into WorkspacePage, which renders the same PageIntro, and the panel
+    // shells moved onto the shared campus-panel primitive via WorkspacePanel. The guarantee being
+    // protected is that this page uses the SHARED framing rather than a hand-rolled one.
+    expect(dashboard).toContain("<WorkspacePage");
+    expect(dashboard).toContain("<WorkspacePanel");
     expect(dashboard).not.toContain("bg-[#dce9f8]");
+  });
+
+  it("keeps the priority tiles on their own shell, which campus-panel would break", () => {
+    // campus-panel is unlayered, so it outranks Tailwind utilities and would discard both the
+    // destructive emphasis border and the hover shadow on these four navigation tiles.
+    expect(dashboard).toContain("border-destructive/30");
+    expect(dashboard).toContain("hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)]");
   });
 });
