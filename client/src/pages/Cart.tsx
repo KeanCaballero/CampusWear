@@ -1,6 +1,7 @@
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
 import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
-import { isStalledWithData, isStalledWithoutData } from "@/lib/queryState";
+import { useIsOffline } from "@/components/campuswear/OfflineNotice";
+import { isStalledWithoutData, isWriteBlocked } from "@/lib/queryState";
 import { PageIntro } from "@/components/campuswear/PageIntro";
 import { PickupPlaque } from "@/components/campuswear/PickupPlaque";
 import { ProductVisual } from "@/components/campuswear/ProductVisual";
@@ -66,8 +67,11 @@ export default function Cart() {
   const count = cartItemCount(items);
   const storeNames = cartStoreNames(items);
   const groups = groupCartByStore(items);
-  // A paused query with cached data keeps the cart readable but must not let anything be submitted.
-  const isStale = isStalledWithData(cart);
+  // A cached cart stays readable while offline, but nothing may be written from it. Connectivity
+  // is read from onlineManager (via useIsOffline) because a settled query never pauses on its
+  // own when the network drops — observed in production with the checkout button still enabled.
+  const isOffline = useIsOffline();
+  const isFrozen = isWriteBlocked(cart, isOffline);
 
   const update = useMutation({
     mutationFn: updateCartItem,
@@ -169,7 +173,7 @@ export default function Cart() {
   }
 
   const reviewing = phase === "checkout";
-  const blocksCheckout = isStale || !orderable.length;
+  const blocksCheckout = isFrozen || !orderable.length;
 
   return (
     <StudentShell>
@@ -201,16 +205,18 @@ export default function Cart() {
           )}
         </div>
 
-        {isStale && (
+        {isFrozen && (
           <div className="mt-5 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4" role="status">
             <WifiOff className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden="true" />
             <div>
-              <p className="text-sm font-extrabold text-destructive">You are offline</p>
+              <p className="text-sm font-extrabold text-destructive">{isOffline ? "You are offline" : "Your cart could not refresh"}</p>
               <p className="mt-1 text-xs leading-5 text-destructive/90">
-                This is your saved cart. Reconnect to check stock and place your order.
+                {isOffline
+                  ? "This is your saved cart. Reconnect to check stock and place your order."
+                  : "We could not refresh your cart just now. This is your last saved view, so checkout is paused."}
               </p>
               <Button size="sm" variant="outline" className="mt-3 min-h-11" onClick={() => cart.refetch()}>
-                Try reconnecting
+                {isOffline ? "Try reconnecting" : "Try again"}
               </Button>
             </div>
           </div>
@@ -275,7 +281,7 @@ export default function Cart() {
                     key={line.variantId}
                     line={line}
                     index={groupIndex + index}
-                    readOnly={reviewing || isStale}
+                    readOnly={reviewing || isFrozen}
                     pending={update.isPending}
                     highlighted={isConflictLine(conflict, line)}
                     onChange={quantity => update.mutate({ variantId: line.variantId, quantity })}

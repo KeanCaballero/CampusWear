@@ -32,14 +32,48 @@ describe("the five query states stay distinguishable", () => {
     expect(cart).toContain("Your cart could not be loaded");
   });
 
-  it("keeps a cached cart on screen when the query is merely paused", () => {
-    expect(cart).toContain("isStalledWithData(cart)");
+  it("keeps a cached cart on screen while it is frozen", () => {
+    expect(cart).toContain("isWriteBlocked(cart, isOffline)");
     expect(cart).toContain("This is your saved cart");
   });
 
-  it("blocks checkout while showing stale cached data", () => {
-    expect(cart).toContain("const blocksCheckout = isStale || !orderable.length");
+  it("blocks checkout whenever the cart is frozen or nothing is orderable", () => {
+    expect(cart).toContain("const blocksCheckout = isFrozen || !orderable.length");
     expect(cart).toContain("disabled={blocksCheckout}");
+  });
+});
+
+// BUG: with cached data and no network the cart stayed visible but the checkout button stayed
+// ENABLED, because TanStack only pauses a fetch it actually attempts — a settled query never
+// attempts one, so `isPaused` stayed false. Verified live in production.
+describe("offline cannot start a checkout", () => {
+  it("reads connectivity from the app's canonical signal, not navigator.onLine", () => {
+    expect(cart).toContain("useIsOffline()");
+    expect(cart).toContain('from "@/components/campuswear/OfflineNotice"');
+    expect(cart).not.toContain("navigator.onLine");
+  });
+
+  it("freezes the cart on EITHER offline or a paused query", () => {
+    expect(cart).toContain("const isFrozen = isWriteBlocked(cart, isOffline)");
+  });
+
+  it("stops quantity and remove controls from firing writes while frozen", () => {
+    expect(cart).toContain("readOnly={reviewing || isFrozen}");
+  });
+
+  it("still distinguishes offline from a query that merely could not refresh", () => {
+    // Reporting a server problem as 'you are offline' is the exact mistake BUG-020 corrected.
+    expect(cart).toContain('{isOffline ? "You are offline" : "Your cart could not refresh"}');
+    expect(cart).toContain('{isOffline ? "Try reconnecting" : "Try again"}');
+  });
+
+  it("keeps the cached cart visible rather than falling back to empty", () => {
+    const frozenBranch = cart.indexOf("{isFrozen && (");
+    const emptyBranch = cart.indexOf('if (!items.length)');
+    expect(frozenBranch).toBeGreaterThan(-1);
+    // The empty branch returns early ABOVE the frozen banner, so a frozen cart with rows can
+    // never reach it.
+    expect(emptyBranch).toBeLessThan(frozenBranch);
   });
 
   it("offers a way to recover from every stalled state", () => {
