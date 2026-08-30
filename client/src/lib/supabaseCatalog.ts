@@ -1,3 +1,4 @@
+import { businessDateIn, resolveBusinessTimeZone } from "@/lib/businessDate";
 import { supabase } from "@/lib/supabase";
 
 export type Availability = "in_stock" | "low_stock" | "out_of_stock";
@@ -617,7 +618,7 @@ export async function transitionVendorOrder(input: { orderId: string; status: Ve
   throw error;
 }
 
-type VendorContext = { vendorId: string; schoolId: string };
+type VendorContext = { vendorId: string; schoolId: string; schoolTimeZone: string };
 async function vendorContext(): Promise<VendorContext> {
   const client = requireSupabase();
   const { data: { user }, error: userError } = await client.auth.getUser();
@@ -626,9 +627,13 @@ async function vendorContext(): Promise<VendorContext> {
   const { data: assignment, error: assignmentError } = await client.from("vendor_staff").select("vendor_id").eq("user_id", user.id).maybeSingle();
   if (assignmentError) throw assignmentError;
   if (!assignment) throw new Error("Your account is not assigned to an authorized vendor.");
-  const { data: vendor, error: vendorError } = await client.from("vendors").select("school_id").eq("id", assignment.vendor_id).single();
+  const { data: vendor, error: vendorError } = await client.from("vendors").select("school_id, schools(timezone)").eq("id", assignment.vendor_id).single();
   if (vendorError) throw vendorError;
-  return { vendorId: assignment.vendor_id, schoolId: vendor.school_id };
+  // schools(timezone) rides along with the query already being made, so this adds no extra round
+  // trip. It is an embedded read, so the school's own SELECT policy still applies; an unreadable
+  // school simply yields no row and resolveBusinessTimeZone falls back explicitly to UTC.
+  const school = Array.isArray((vendor as any).schools) ? (vendor as any).schools[0] : (vendor as any).schools;
+  return { vendorId: assignment.vendor_id, schoolId: vendor.school_id, schoolTimeZone: resolveBusinessTimeZone(school?.timezone) };
 }
 
 export async function getVendorPickupLocation(): Promise<string> {
@@ -857,8 +862,10 @@ export async function publishVendorAnnouncement(input: { title: string; body: st
 }
 
 export async function vendorDashboardData() {
-  const [orders, inventory] = await Promise.all([listVendorOrders(), listVendorInventory()]);
-  const today = new Date().toISOString().slice(0, 10);
+  const [context, orders, inventory] = await Promise.all([vendorContext(), listVendorOrders(), listVendorInventory()]);
+  // "Today" is the calendar date at the school, not in UTC. Deriving it from toISOString() misfiled
+  // every sale completed between 00:00 and 08:00 Manila time into the previous day.
+  const today = businessDateIn(new Date(), context.schoolTimeZone);
   return {
     pendingOrders: orders.filter(order => ["pending", "confirmed", "preparing"].includes(order.status)).length,
     readyForPickup: orders.filter(order => order.status === "ready_for_pickup").length,
@@ -866,7 +873,7 @@ export async function vendorDashboardData() {
     // Surfaced on the dashboard inventory panel. Reuses the inventory already fetched above,
     // so this adds no extra query.
     lowStockItems: inventory.filter(item => item.availability !== "in_stock").slice(0, 6),
-    todaysSalesInCentavos: orders.filter(order => order.status === "completed" && order.completedAt?.startsWith(today)).reduce((sum, order) => sum + order.totalInCentavos, 0),
+    todaysSalesInCentavos: orders.filter(order => order.status === "completed" && Boolean(order.completedAt) && businessDateIn(order.completedAt as string, context.schoolTimeZone) === today).reduce((sum, order) => sum + order.totalInCentavos, 0),
     recentOrders: orders.slice(0, 6),
   };
 }
