@@ -27,4 +27,12 @@ describe("Pasted Content 11/12 vendor-dashboard redesign", () => {
     expect(dashboard).toContain("border-destructive/30");
     expect(dashboard).toContain("hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)]");
   });
+
+  it("still gives those tiles the shared radius token, so the page has one radius", () => {
+    // Before Phase 1 all six panels on this page were rounded-xl. The tiles were never
+    // distinguished by radius, so leaving them at 12px while siblings moved to the 14px token
+    // would be an inconsistency introduced by the refactor, not a preserved intent.
+    expect(dashboard).toContain("rounded-[var(--radius)]");
+    expect(dashboard).not.toMatch(/group rounded-xl border bg-card/);
+  });
 });

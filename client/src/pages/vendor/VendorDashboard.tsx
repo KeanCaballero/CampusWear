@@ -133,10 +133,12 @@ export default function VendorDashboard() {
           ) : (
             <>
               {/*
-                These four tiles deliberately keep their own shell rather than using WorkspacePanel.
-                `.campus-panel` is unlayered in index.css, so it outranks every Tailwind utility and
-                would silently discard BOTH the destructive emphasis border and the hover shadow
-                below. Revisit when Dashboard visuals are in scope.
+                These four tiles keep their own shell rather than using WorkspacePanel: `.campus-panel`
+                is unlayered in index.css, so it outranks every Tailwind utility and would silently
+                discard BOTH the destructive emphasis border and the hover shadow below.
+                They still take the shared --radius token, so they match every other panel on the
+                page — before Phase 1 all six panels here were rounded-xl, and the tiles were never
+                distinguished by radius, only by the emphasis border.
               */}
               <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Store priorities">
                 {metrics.map(metric => {
@@ -146,7 +148,7 @@ export default function VendorDashboard() {
                     <Link
                       key={metric.label}
                       href={metric.href}
-                      className={`group rounded-xl border bg-card p-5 transition-shadow hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)] ${metric.emphasis ? "border-destructive/30" : "border-border"}`}
+                      className={`group rounded-[var(--radius)] border bg-card p-5 transition-shadow hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)] ${metric.emphasis ? "border-destructive/30" : "border-border"}`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <span className={`text-[11px] font-bold uppercase tracking-[0.09em] ${metric.emphasis ? "text-destructive" : "text-muted-foreground"}`}>{metric.label}</span>
