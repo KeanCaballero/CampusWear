@@ -284,16 +284,83 @@ export async function addVariantToCart(input: { productId: string; variantId: st
   if (upsertError) throw upsertError;
 }
 
+/**
+ * Base class for errors whose message was written for a person and is safe to render verbatim.
+ *
+ * Raw PostgREST/Postgres errors must never reach the UI. Two reasons: they leak schema internals,
+ * and — verified against the real client — a PostgREST error arrives as a PLAIN OBJECT, not an
+ * `Error` instance. So `error instanceof Error` is false for genuine database failures, which
+ * silently collapses them into whatever generic fallback the caller wrote. Callers render
+ * `message` only for this class and supply their own copy for anything else.
+ */
+export class UserFacingError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = "UserFacingError";
+    if (options && "cause" in options) this.cause = options.cause;
+  }
+}
+
+/**
+ * The database refused the order because inventory moved while the cart was open.
+ *
+ * `create_order_from_cart` locks the inventory rows and raises P0001
+ * `Insufficient stock for {product} ({size})`. That product and size are the only way the student
+ * can tell which line blocked them, so they are parsed out and carried here rather than discarded.
+ * The whole RPC is transactional, so nothing was ordered and the cart is untouched.
+ */
+export class CheckoutStockConflictError extends UserFacingError {
+  readonly productName: string | null;
+  readonly size: string | null;
+  constructor(productName: string | null, size: string | null, options?: { cause?: unknown }) {
+    super(
+      productName
+        ? `${productName}${size ? ` (size ${size})` : ""} does not have enough stock left. Lower the quantity or remove it, then place your order again.`
+        : "One of your items does not have enough stock left. Update your cart, then place your order again.",
+      options,
+    );
+    this.name = "CheckoutStockConflictError";
+    this.productName = productName;
+    this.size = size;
+  }
+}
+
+/** Checkout failed for a reason that is not a stock refusal — a transport fault, an outage. */
+export class CheckoutFailedError extends UserFacingError {
+  constructor(options?: { cause?: unknown }) {
+    super("We could not place your order. Nothing was ordered and your cart has not changed — please try again.", options);
+    this.name = "CheckoutFailedError";
+  }
+}
+
+/** Matches the exact message raised by create_order_from_cart. */
+const INSUFFICIENT_STOCK = /insufficient stock for\s+(.+?)\s*\(([^)]*)\)\s*$/i;
+
+function asCheckoutError(error: unknown): UserFacingError {
+  const message = typeof (error as { message?: unknown })?.message === "string" ? (error as { message: string }).message : "";
+  const match = INSUFFICIENT_STOCK.exec(message.trim());
+  if (match) return new CheckoutStockConflictError(match[1]?.trim() || null, match[2]?.trim() || null, { cause: error });
+  // The DB raises this bare sentence when the cart still has rows but stock is gone for one of them.
+  if (/insufficient stock/i.test(message)) return new CheckoutStockConflictError(null, null, { cause: error });
+  return new CheckoutFailedError({ cause: error });
+}
+
 export type CartLine = {
   variantId: string;
-  productId: string;
+  productId: string | null;
   productName: string;
   imageUrl: string | null;
-  size: string;
-  vendorName: string;
+  size: string | null;
+  vendorName: string | null;
   unitPriceInCentavos: number;
   quantity: number;
   availability: Availability;
+  /**
+   * The variant is no longer readable in the public catalog — the product was deactivated, or the
+   * vendor lost authorization. The line is kept so the student can see and remove it; it must never
+   * be silently dropped, and it contributes nothing to the total.
+   */
+  isUnavailable: boolean;
 };
 
 export function cartQueryKey(userId: string | number | null | undefined) {
@@ -319,31 +386,78 @@ export async function listCart(): Promise<CartLine[]> {
   if (!cartItems?.length) return [];
   const catalog = await listPublicCatalog();
   const variants = new Map(catalog.flatMap(product => product.variants.map(variant => [variant.id, { product, variant }] as const)));
-  return cartItems.flatMap(item => {
+  return cartItems.map(item => {
     const entry = variants.get(item.variant_id);
-    if (!entry) return [];
-    return [{ variantId: item.variant_id, productId: entry.product.id, productName: entry.product.name, imageUrl: entry.product.imageUrl, size: entry.variant.size, vendorName: entry.product.vendorName, unitPriceInCentavos: entry.product.priceInCentavos, quantity: item.quantity, availability: entry.variant.availability }];
+    // A variant missing from the public catalog is NOT a reason to hide the line. The student put
+    // it there and only they can remove it, so it is surfaced as unavailable instead.
+    if (!entry) {
+      return { variantId: item.variant_id, productId: null, productName: "Item no longer available", imageUrl: null, size: null, vendorName: null, unitPriceInCentavos: 0, quantity: item.quantity, availability: "out_of_stock" as Availability, isUnavailable: true };
+    }
+    return { variantId: item.variant_id, productId: entry.product.id, productName: entry.product.name, imageUrl: entry.product.imageUrl, size: entry.variant.size, vendorName: entry.product.vendorName, unitPriceInCentavos: entry.product.priceInCentavos, quantity: item.quantity, availability: entry.variant.availability, isUnavailable: false };
   });
+}
+
+/** Lines that can actually be ordered. Unavailable lines never count toward a total. */
+export function orderableCartLines(lines: CartLine[]): CartLine[] {
+  return lines.filter(line => !line.isUnavailable);
+}
+
+export function cartTotalInCentavos(lines: CartLine[]): number {
+  return orderableCartLines(lines).reduce((sum, line) => sum + line.unitPriceInCentavos * line.quantity, 0);
+}
+
+export function cartItemCount(lines: CartLine[]): number {
+  return orderableCartLines(lines).reduce((sum, line) => sum + line.quantity, 0);
+}
+
+/**
+ * Group by store, because create_order_from_cart creates ONE ORDER PER VENDOR. Hiding that split
+ * would surprise the student on the orders page, so the UI shows the grouping it will produce.
+ */
+export function groupCartByStore(lines: CartLine[]): Array<{ vendorName: string | null; lines: CartLine[] }> {
+  const groups = new Map<string, { vendorName: string | null; lines: CartLine[] }>();
+  for (const line of lines) {
+    // Prefixed so a store genuinely named "unavailable" cannot collide with the sentinel groups.
+    const key = line.isUnavailable ? "!unavailable" : line.vendorName ? `store:${line.vendorName}` : "!unknown";
+    const group = groups.get(key) ?? { vendorName: line.isUnavailable ? null : line.vendorName, lines: [] };
+    group.lines.push(line);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values());
+}
+
+/** Distinct stores that will each receive their own pickup request. */
+export function cartStoreNames(lines: CartLine[]): string[] {
+  return Array.from(new Set(orderableCartLines(lines).map(line => line.vendorName).filter((name): name is string => Boolean(name))));
 }
 
 export async function updateCartItem(input: { variantId: string; quantity: number }): Promise<void> {
   const client = requireSupabase();
   const cart = await currentCart();
-  if (!cart) throw new Error("Your cart no longer exists.");
+  if (!cart) throw new UserFacingError("Your cart is no longer available. Refresh the page to start again.");
   if (input.quantity <= 0) {
     const { error } = await client.from("cart_items").delete().eq("cart_id", cart.id).eq("variant_id", input.variantId);
-    if (error) throw error;
+    if (error) throw new UserFacingError("We could not remove that item. Please try again.", { cause: error });
     return;
   }
+  // The 10-unit cap is enforced here as well as in the UI so a stale page cannot exceed it.
   const { error } = await client.from("cart_items").update({ quantity: Math.min(10, input.quantity) }).eq("cart_id", cart.id).eq("variant_id", input.variantId);
-  if (error) throw error;
+  if (error) throw new UserFacingError("We could not update that quantity. Please try again.", { cause: error });
 }
 
-export async function checkoutCart(pickupLocation: string): Promise<number> {
+export type PlacedOrder = { id: string; orderNumber: string; totalInCentavos: number; pickupLocation: string };
+
+/**
+ * Places the pickup request(s). The database is authoritative: it re-locks inventory and refuses
+ * the whole transaction if anything is short, so this never submits a partially valid order.
+ *
+ * Returns one entry PER VENDOR — the RPC groups the cart by vendor and creates an order for each.
+ */
+export async function checkoutCart(pickupLocation: string): Promise<PlacedOrder[]> {
   const client = requireSupabase();
   const { data, error } = await client.rpc("create_order_from_cart", { pickup_location_input: pickupLocation.trim(), pickup_at_input: null, pickup_slot_input: null });
-  if (error) throw error;
-  return (data ?? []).length;
+  if (error) throw asCheckoutError(error);
+  return (data ?? []).map((order: any) => ({ id: order.id, orderNumber: order.order_number, totalInCentavos: order.total_in_centavos, pickupLocation: order.pickup_location }));
 }
 
 export type StudentOrder = {
@@ -530,18 +644,13 @@ export async function updateManagedProduct(input: { id: string; name: string; de
 }
 
 /**
- * Marks an error whose message was written for vendors and is safe to render verbatim.
- *
- * Raw PostgREST/Postgres errors must never reach the UI. They leak schema internals — table
- * names, policy names, SQLSTATE text like `infinite recursion detected in policy for relation
- * "products"` — and mean nothing to a vendor. Callers render `message` only for this class and
- * fall back to their own copy for anything else.
+ * Vendor-workspace flavour of {@link UserFacingError}. Kept as its own class so vendor screens can
+ * narrow to it, but it shares the base so one `instanceof UserFacingError` check covers the app.
  */
-export class VendorFacingError extends Error {
+export class VendorFacingError extends UserFacingError {
   constructor(message: string, options?: { cause?: unknown }) {
-    super(message);
+    super(message, options);
     this.name = "VendorFacingError";
-    if (options && "cause" in options) this.cause = options.cause;
   }
 }
 
