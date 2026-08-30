@@ -78,6 +78,27 @@ export function showsStaleData(query: QueryLike): boolean {
   return hasData(query) && (Boolean(query.isPaused) || Boolean(query.isError));
 }
 
+/**
+ * Whether a screen showing cached data should refuse to start a write.
+ *
+ * `isStalledWithData` alone is not sufficient. TanStack only sets `fetchStatus: "paused"` when a
+ * fetch is actually ATTEMPTED while offline — a query that has already settled with fresh data
+ * never attempts one, so it stays unpaused even with the network down. Observed in production: the
+ * cart stayed visible and its checkout button stayed enabled while offline.
+ *
+ * So connectivity is consulted directly. `isOffline` must come from `useIsOffline()`, which reads
+ * `onlineManager` — the same signal TanStack itself uses to decide whether a query may run, and
+ * the same one the offline banner and panel use, so none of them can contradict each other. It
+ * also recovers on its own: `onlineManager` publishes reconnection, which re-enables the action.
+ *
+ * Deliberately NOT `navigator.onLine` on its own, and deliberately not "any paused query" — a
+ * fetch also pauses while a retry waits on window focus, which is a server problem, not a
+ * connectivity one.
+ */
+export function isWriteBlocked(query: QueryLike, isOffline: boolean): boolean {
+  return Boolean(isOffline) || isStalledWithData(query);
+}
+
 export function resolveQueryState(query: QueryLike, isEmpty = false) {
   return { phase: resolveQueryPhase(query, isEmpty), showStaleNotice: showsStaleData(query) };
 }

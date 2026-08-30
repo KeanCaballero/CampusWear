@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isStalledWithData, isStalledWithoutData, resolveQueryPhase, resolveQueryState, showsStaleData, type QueryLike } from "./queryState";
+import { isStalledWithData, isStalledWithoutData, isWriteBlocked, resolveQueryPhase, resolveQueryState, showsStaleData, type QueryLike } from "./queryState";
 
 // Behavioural coverage for the shared five-state model (BUG-020).
 //
@@ -116,5 +116,63 @@ describe("resolveQueryState bundles phase and staleness", () => {
     ]);
 
     expect(phases).toEqual(new Set(["loading", "offline", "error", "empty", "success"]));
+  });
+});
+
+
+// Regression coverage for the production defect where an offline cart still offered checkout.
+//
+// TanStack sets fetchStatus "paused" only for a fetch it ACTUALLY ATTEMPTS while offline. A query
+// that already settled with fresh data never attempts one, so it stays unpaused even with the
+// network down -- which is why `isStalledWithData` alone could not gate the checkout button.
+describe("isWriteBlocked", () => {
+  const settledWithData: QueryLike = { isLoading: false, isPaused: false, isError: false, data: [1] };
+  const pausedWithData: QueryLike = { isLoading: false, isPaused: true, isError: false, data: [1] };
+  const pausedNoData: QueryLike = { isLoading: false, isPaused: true, isError: false, data: undefined };
+  const emptySettled: QueryLike = { isLoading: false, isPaused: false, isError: false, data: [] };
+
+  it("allows writes when online with settled data", () => {
+    expect(isWriteBlocked(settledWithData, false)).toBe(false);
+  });
+
+  it("BLOCKS writes when offline even though the query never paused", () => {
+    // This is the exact production case: cart visible, query unpaused, network down.
+    expect(settledWithData.isPaused).toBe(false);
+    expect(isWriteBlocked(settledWithData, true)).toBe(true);
+  });
+
+  it("blocks writes when the query is paused with cached data, even if reported online", () => {
+    expect(isWriteBlocked(pausedWithData, false)).toBe(true);
+  });
+
+  it("blocks writes when offline and paused", () => {
+    expect(isWriteBlocked(pausedWithData, true)).toBe(true);
+  });
+
+  it("blocks writes when offline with no cached data at all", () => {
+    expect(isWriteBlocked(pausedNoData, true)).toBe(true);
+  });
+
+  it("re-allows writes as soon as connectivity returns", () => {
+    expect(isWriteBlocked(settledWithData, true)).toBe(true);
+    expect(isWriteBlocked(settledWithData, false)).toBe(false);
+  });
+
+  it("does not block a legitimately empty cart while online", () => {
+    // Empty must stay empty -- it is not an offline state.
+    expect(isWriteBlocked(emptySettled, false)).toBe(false);
+    expect(isStalledWithoutData(emptySettled)).toBe(false);
+  });
+
+  it("treats a legitimately empty cart as blocked only when offline", () => {
+    expect(isWriteBlocked(emptySettled, true)).toBe(true);
+  });
+
+  it("is a pure function of connectivity OR staleness", () => {
+    for (const offline of [true, false]) {
+      for (const q of [settledWithData, pausedWithData, pausedNoData, emptySettled]) {
+        expect(isWriteBlocked(q, offline)).toBe(offline || isStalledWithData(q));
+      }
+    }
   });
 });
