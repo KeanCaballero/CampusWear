@@ -771,6 +771,81 @@ export async function updateVendorInventory(input: { variantId: string; quantity
   if (error) throw error;
 }
 
+export type VendorAnnouncement = { id: string; title: string; body: string; createdAt: string; updatedAt: string };
+
+/**
+ * Copy for the refusals this table produces deliberately. Postgres' own RLS message names internal
+ * objects, so unlike the order-transition RPC these are NOT passed through — the vendor sees our
+ * wording and the raw text never leaves the data layer.
+ */
+const ANNOUNCEMENT_REFUSALS: Record<string, string> = {
+  "42501": "You are not authorized to manage announcements for this store.",
+};
+
+function asAnnouncementError(error: { code?: string | null }): unknown {
+  const safe = error.code ? ANNOUNCEMENT_REFUSALS[error.code] : undefined;
+  return safe ? new VendorFacingError(safe, { cause: error }) : error;
+}
+
+/**
+ * The vendor's own currently-visible announcements.
+ *
+ * Scope note: RLS on public.announcements grants SELECT on `is_active AND (expires_at IS NULL OR
+ * expires_at > now())` to every authenticated user — it does NOT scope by vendor. The vendor_id
+ * predicate below is therefore a DISPLAY filter so the page shows "yours" rather than the whole
+ * campus; it is not the security boundary. Readability is still decided by RLS, and every write is
+ * re-checked by the UPDATE policy, so a tampered id simply matches zero rows.
+ *
+ * Consequence worth knowing: a deactivated or expired announcement stops satisfying the SELECT
+ * policy, so it leaves this list permanently. There is no vendor-visible archive.
+ */
+export async function listVendorAnnouncements(): Promise<VendorAnnouncement[]> {
+  const client = requireSupabase();
+  const context = await vendorContext();
+  const { data, error } = await client
+    .from("announcements")
+    .select("id, title, body, created_at, updated_at")
+    .eq("vendor_id", context.vendorId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row: any) => ({ id: row.id, title: row.title, body: row.body, createdAt: row.created_at, updatedAt: row.updated_at }));
+}
+
+export function vendorAnnouncementsQueryKey(userId: string | number | null | undefined) {
+  return ["supabase-vendor-announcements", userId ?? "anonymous"] as const;
+}
+
+/**
+ * Edits an announcement the vendor still owns. The UPDATE policy re-checks vendor staffing, and a
+ * filtered write returns 200 with an empty array rather than an error — so the representation is
+ * requested and zero rows are treated as a refusal, never as success.
+ */
+export async function updateVendorAnnouncement(input: { id: string; title: string; body: string }): Promise<void> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("announcements")
+    .update({ title: input.title.trim(), body: input.body.trim(), updated_at: new Date().toISOString() })
+    .eq("id", input.id)
+    .select("id");
+  if (error) throw asAnnouncementError(error);
+  if (!data?.length) throw new VendorFacingError("That announcement could no longer be updated. Refresh and try again.");
+}
+
+/**
+ * Withdraws an announcement from student view. The table grants no DELETE and has no DELETE policy,
+ * so deactivation is the only supported removal. Sets is_active and nothing else.
+ */
+export async function deactivateVendorAnnouncement(input: { id: string }): Promise<void> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("announcements")
+    .update({ is_active: false })
+    .eq("id", input.id)
+    .select("id");
+  if (error) throw asAnnouncementError(error);
+  if (!data?.length) throw new VendorFacingError("That announcement could no longer be withdrawn. Refresh and try again.");
+}
+
 export async function publishVendorAnnouncement(input: { title: string; body: string }): Promise<void> {
   const client = requireSupabase();
   const context = await vendorContext();
@@ -778,7 +853,7 @@ export async function publishVendorAnnouncement(input: { title: string; body: st
   if (userError) throw userError;
   if (!user) throw new Error("Sign in to publish an announcement.");
   const { error } = await client.from("announcements").insert({ school_id: context.schoolId, vendor_id: context.vendorId, author_id: user.id, title: input.title.trim(), body: input.body.trim(), is_active: true });
-  if (error) throw error;
+  if (error) throw asAnnouncementError(error);
 }
 
 export async function vendorDashboardData() {
