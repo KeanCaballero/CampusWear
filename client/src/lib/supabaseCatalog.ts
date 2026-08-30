@@ -595,10 +595,26 @@ export async function listVendorOrders(): Promise<VendorOrder[]> {
   return (data ?? []).map((order: any) => ({ id: order.id, orderNumber: order.order_number, status: order.status, pickupStatus: order.pickup_status, pickupLocation: order.pickup_location, placedAt: order.placed_at, completedAt: order.completed_at, totalInCentavos: order.total_in_centavos, items: (order.order_items ?? []).map((item: any) => ({ productName: item.product_name, size: item.variant_size, quantity: item.quantity })) }));
 }
 
+/**
+ * SQLSTATEs that transition_order_status raises deliberately. Their messages are written for the
+ * vendor — "You are not authorized to update this order", "This order status transition is not
+ * allowed" — so they are safe to show. Anything else is an unexpected fault whose raw text must
+ * never reach the UI.
+ */
+const TRANSITION_REFUSAL_CODES = new Set(["28000", "P0002", "42501", "22023"]);
+
 export async function transitionVendorOrder(input: { orderId: string; status: VendorOrder["status"] }): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.rpc("transition_order_status", { p_order_id: input.orderId, p_new_status: input.status });
-  if (error) throw error;
+  if (!error) return;
+  // supabase-js hands back a plain object, not an Error, so the UI cannot narrow on `instanceof
+  // Error`. Tagging the deliberate refusals here lets the page show the real reason while every
+  // other failure still falls back to generic copy.
+  const code = (error as { code?: string | null }).code;
+  if (code && TRANSITION_REFUSAL_CODES.has(code) && error.message) {
+    throw new VendorFacingError(error.message, { cause: error });
+  }
+  throw error;
 }
 
 type VendorContext = { vendorId: string; schoolId: string };
