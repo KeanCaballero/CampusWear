@@ -64,8 +64,12 @@ describe("MetricCard consolidates the duplicated Reports tiles", () => {
     }
   });
 
-  it("is actually adopted by Reports for all three tiles", () => {
-    expect(vendorSource.VendorReports.match(/<MetricCard/g)).toHaveLength(3);
+  it("is actually adopted by Reports for its summary tiles", () => {
+    // Phase 1 pinned exactly 3 because that was every tile Reports had. Phase 7 deliberately
+    // surfaces more real figures — pending, completed, cancelled/rejected, average order value and
+    // fulfilment rate — so the count grew to 8. The guarantee being protected is ADOPTION of the
+    // shared component, not a fixed number of cards, so this asserts a floor plus both tones.
+    expect(vendorSource.VendorReports.match(/<MetricCard/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
     expect(vendorSource.VendorReports).toContain('tone="primary"');
     expect(vendorSource.VendorReports).toContain('tone="warning"');
   });
