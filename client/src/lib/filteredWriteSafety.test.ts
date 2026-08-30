@@ -18,7 +18,8 @@ const harness = vi.hoisted(() => {
     writeMatchesRow: true,
     writeError: null as { message: string; code?: string } | null,
     productRow: { id: "product-1", image_path: "vendor-1/p.jpg" } as Record<string, unknown> | null,
-    cartRow: { id: "cart-1" } as { id: string } | null,
+    /** PostgREST returns the student's carts as an array — one per school. */
+    cartIds: ["cart-1"] as string[],
     calls: [] as Array<{ table: string; op: string; selected?: string }>,
   };
 
@@ -37,8 +38,9 @@ const harness = vi.hoisted(() => {
       update: () => { state.op = "update"; return b; },
       delete: () => { state.op = "delete"; return b; },
       eq: () => b,
+      in: () => b,
       order: () => b,
-      maybeSingle: () => Promise.resolve(state.op === "select" ? { data: table === "carts" ? scenario.cartRow : selectResultFor(table), error: null } : settle()),
+      maybeSingle: () => Promise.resolve(state.op === "select" ? { data: selectResultFor(table), error: null } : settle()),
       single: () => Promise.resolve(settle()),
       then: (ok: any, err: any) => Promise.resolve(settle()).then(ok, err),
     };
@@ -48,11 +50,13 @@ const harness = vi.hoisted(() => {
   const client = {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: "user-1" } }, error: null }) },
     from: (table: string) => {
-      if (table === "vendor_staff") { const b: any = { select: () => b, eq: () => b, maybeSingle: () => Promise.resolve({ data: { vendor_id: "vendor-1" }, error: null }) }; return b; }
+      // vendorContext() reads vendor_staff as an ordered, limited LIST: the table is keyed
+      // (vendor_id, user_id), so one user can staff several vendors.
+      if (table === "vendor_staff") { const b: any = { select: () => b, eq: () => b, order: () => b, limit: () => b, then: (ok: any, err: any) => Promise.resolve({ data: [{ vendor_id: "vendor-1" }], error: null }).then(ok, err) }; return b; }
       // vendors is both read (vendorContext) and written (setVendorAuthorization), so it must use
       // the generic builder rather than a bespoke object that would swallow .update().
       if (table === "vendors") return builder("vendors");
-      if (table === "carts") { const b: any = { select: () => b, eq: () => b, maybeSingle: () => Promise.resolve({ data: scenario.cartRow, error: null }) }; return b; }
+      if (table === "carts") { const b: any = { select: () => b, eq: () => b, then: (ok: any, err: any) => Promise.resolve({ data: scenario.cartIds.map(id => ({ id })), error: null }).then(ok, err) }; return b; }
       return builder(table);
     },
     storage: { from: () => ({ upload: () => Promise.resolve({ error: null }), remove: () => Promise.resolve({ error: null }), getPublicUrl: (p: string) => ({ data: { publicUrl: `https://cdn.test/${p}` } }) }) },
@@ -82,7 +86,7 @@ beforeEach(() => {
   harness.scenario.writeMatchesRow = true;
   harness.scenario.writeError = null;
   harness.scenario.productRow = { id: "product-1", image_path: "vendor-1/p.jpg" };
-  harness.scenario.cartRow = { id: "cart-1" };
+  harness.scenario.cartIds = ["cart-1"];
   harness.scenario.calls = [];
 });
 

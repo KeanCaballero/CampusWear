@@ -24,6 +24,8 @@ const harness = vi.hoisted(() => {
       select: () => builder,
       eq: () => builder,
       order: () => builder,
+      limit: () => builder,
+      in: () => builder,
       insert: () => builder,
       update: () => {
         state.updated = true;
@@ -45,7 +47,9 @@ const harness = vi.hoisted(() => {
       getUser: () => Promise.resolve({ data: { user: { id: "staff-1" } }, error: null }),
     },
     from: (table: string) => {
-      if (table === "vendor_staff") return tableBuilder(() => ({ data: { vendor_id: "vendor-1" }, error: null }));
+      // vendorContext() reads vendor_staff as an ordered, limited LIST — the table is keyed
+      // (vendor_id, user_id), so one user can staff several vendors — hence an array here.
+      if (table === "vendor_staff") return tableBuilder(() => ({ data: [{ vendor_id: "vendor-1" }], error: null }));
       if (table === "vendors") return tableBuilder(() => ({ data: { school_id: "school-1" }, error: null }));
       if (table === "products") {
         return tableBuilder((deleted, updated) =>

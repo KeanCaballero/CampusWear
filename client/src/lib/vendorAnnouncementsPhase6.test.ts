@@ -42,7 +42,10 @@ const harness = vi.hoisted(() => {
     from: (table: string) => {
       // vendorContext() resolves vendor_staff with maybeSingle() and vendors with single().
       if (table === "vendor_staff") {
-        const b: any = { select: () => b, eq: () => b, maybeSingle: () => Promise.resolve({ data: { vendor_id: "vendor-1" }, error: null }), single: () => Promise.resolve({ data: { vendor_id: "vendor-1" }, error: null }) };
+        // vendorContext() reads this as an ordered, limited LIST: vendor_staff is keyed
+        // (vendor_id, user_id), so one user can staff several vendors and PostgREST answers
+        // with an array.
+        const b: any = { select: () => b, eq: () => b, order: () => b, limit: () => b, then: (ok: any, err: any) => Promise.resolve({ data: [{ vendor_id: "vendor-1" }], error: null }).then(ok, err) };
         return b;
       }
       if (table === "vendors") {

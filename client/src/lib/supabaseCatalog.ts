@@ -368,21 +368,37 @@ export function cartQueryKey(userId: string | number | null | undefined) {
   return ["supabase-cart", userId ?? "anonymous"] as const;
 }
 
-async function currentCart() {
+/**
+ * Every cart the student currently holds.
+ *
+ * `carts` is UNIQUE (student_id, school_id), so a student has ONE CART PER SCHOOL — and
+ * `get_public_catalog` applies no school filter, so the storefront happily shows products from
+ * every active school and a student can end up holding two carts. The database already accounts
+ * for that: `create_order_from_cart` loops
+ * `for current_cart in select * from public.carts where student_id = auth.uid()` and drains all
+ * of them.
+ *
+ * This read used to ask for a single row with `.maybeSingle()`, which raises PGRST116 as soon as a
+ * second cart exists — taking down the cart page, the item count and every quantity change, while
+ * checkout carried on ordering from carts the student could no longer see. The client now mirrors
+ * the database instead of contradicting it.
+ */
+async function currentCartIds(): Promise<string[]> {
   const client = requireSupabase();
   const { data: { user }, error: userError } = await client.auth.getUser();
   if (userError) throw userError;
   if (!user) throw new Error("Sign in to access your cart.");
-  const { data, error } = await client.from("carts").select("id").eq("student_id", user.id).maybeSingle();
+  const { data, error } = await client.from("carts").select("id").eq("student_id", user.id);
   if (error) throw error;
-  return data;
+  return (data ?? []).map((cart: { id: string }) => cart.id);
 }
 
 export async function listCart(): Promise<CartLine[]> {
   const client = requireSupabase();
-  const cart = await currentCart();
-  if (!cart) return [];
-  const { data: cartItems, error: itemsError } = await client.from("cart_items").select("variant_id, quantity").eq("cart_id", cart.id);
+  const cartIds = await currentCartIds();
+  if (!cartIds.length) return [];
+  // Every cart at once: a student shopping two schools has two, and both belong on this page.
+  const { data: cartItems, error: itemsError } = await client.from("cart_items").select("variant_id, quantity").in("cart_id", cartIds);
   if (itemsError) throw itemsError;
   if (!cartItems?.length) return [];
   const catalog = await listPublicCatalog();
@@ -434,16 +450,18 @@ export function cartStoreNames(lines: CartLine[]): string[] {
 
 export async function updateCartItem(input: { variantId: string; quantity: number }): Promise<void> {
   const client = requireSupabase();
-  const cart = await currentCart();
-  if (!cart) throw new UserFacingError("Your cart is no longer available. Refresh the page to start again.");
+  const cartIds = await currentCartIds();
+  if (!cartIds.length) throw new UserFacingError("Your cart is no longer available. Refresh the page to start again.");
+  // cart_items is keyed (cart_id, variant_id) and a variant belongs to exactly one school, so a
+  // variant can appear in at most one of these carts — matching across all of them stays exact.
   if (input.quantity <= 0) {
-    const { data: removed, error } = await client.from("cart_items").delete().eq("cart_id", cart.id).eq("variant_id", input.variantId).select("variant_id");
+    const { data: removed, error } = await client.from("cart_items").delete().in("cart_id", cartIds).eq("variant_id", input.variantId).select("variant_id");
     if (error) throw new UserFacingError("We could not remove that item. Please try again.", { cause: error });
     if (!removed?.length) throw new UserFacingError("That item is no longer in your cart. Refresh to see the latest version.");
     return;
   }
   // The 10-unit cap is enforced here as well as in the UI so a stale page cannot exceed it.
-  const { data: changed, error } = await client.from("cart_items").update({ quantity: Math.min(10, input.quantity) }).eq("cart_id", cart.id).eq("variant_id", input.variantId).select("variant_id");
+  const { data: changed, error } = await client.from("cart_items").update({ quantity: Math.min(10, input.quantity) }).in("cart_id", cartIds).eq("variant_id", input.variantId).select("variant_id");
   if (error) throw new UserFacingError("We could not update that quantity. Please try again.", { cause: error });
   if (!changed?.length) throw new UserFacingError("That item is no longer in your cart. Refresh to see the latest version.");
 }
@@ -626,8 +644,14 @@ async function vendorContext(): Promise<VendorContext> {
   const { data: { user }, error: userError } = await client.auth.getUser();
   if (userError) throw userError;
   if (!user) throw new Error("Sign in to manage products.");
-  const { data: assignment, error: assignmentError } = await client.from("vendor_staff").select("vendor_id").eq("user_id", user.id).maybeSingle();
+  // vendor_staff is keyed (vendor_id, user_id), so ONE PERSON CAN STAFF SEVERAL VENDORS. Reading
+  // this with `.maybeSingle()` raised PGRST116 the moment that happened, and because every vendor
+  // screen resolves its context here, the entire vendor workspace went down at once. There is no
+  // store switcher yet, so the assignment is ordered and the first one taken: deterministic across
+  // requests, rather than a crash — or a workspace that silently changes store between reloads.
+  const { data: assignments, error: assignmentError } = await client.from("vendor_staff").select("vendor_id").eq("user_id", user.id).order("vendor_id").limit(1);
   if (assignmentError) throw assignmentError;
+  const assignment = assignments?.[0];
   if (!assignment) throw new Error("Your account is not assigned to an authorized vendor.");
   const { data: vendor, error: vendorError } = await client.from("vendors").select("school_id, schools(timezone)").eq("id", assignment.vendor_id).single();
   if (vendorError) throw vendorError;
