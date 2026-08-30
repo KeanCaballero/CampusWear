@@ -10,7 +10,9 @@ describe("Pasted Content 11/12 operational redesign", () => {
     expect(products).toContain("ProductPhotoAdjuster");
     expect(products).toContain("Sizes, SKU, and stock");
     expect(products).toContain("Available now");
-    expect(products).toContain("rounded-xl border border-border bg-card");
+    // The catalog panels now use the shared WorkspacePanel/campus-panel shell instead of a
+    // hand-rolled one. The workflows asserted above are what this test protects.
+    expect(products).toContain("<WorkspacePanel");
   });
 
   it("keeps controlled platform approval and school availability operations visible", () => {

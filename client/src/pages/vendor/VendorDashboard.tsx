@@ -2,9 +2,10 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
 import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
 import { isStalledWithoutData } from "@/lib/queryState";
-import { PageIntro } from "@/components/campuswear/PageIntro";
 import { StatusBadge } from "@/components/campuswear/StatusBadge";
 import { WorkspaceGate } from "@/components/campuswear/WorkspaceGate";
+import { WorkspacePage } from "@/components/campuswear/WorkspacePage";
+import { WorkspacePanel } from "@/components/campuswear/WorkspacePanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -104,13 +105,12 @@ export default function VendorDashboard() {
   return (
     <DashboardLayout items={vendorNavigation} primaryAction={vendorPrimaryAction} workspaceLabel="Vendor workspace">
       <WorkspaceGate allowedRoles={["vendor_staff", "platform_admin", "admin"]}>
-        <div className="mx-auto max-w-[1280px]">
-          <PageIntro
-            eyebrow="VENDOR WORKSPACE"
-            title="Overview"
-            description="Welcome back. Here’s what needs your attention at the store today."
-            actions={<Link href="/vendor/orders" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-secondary">Review orders <ArrowUpRight className="size-4" aria-hidden="true" /></Link>}
-          />
+        <WorkspacePage
+          eyebrow="VENDOR WORKSPACE"
+          title="Overview"
+          description="Welcome back. Here’s what needs your attention at the store today."
+          actions={<Link href="/vendor/orders" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-secondary">Review orders <ArrowUpRight className="size-4" aria-hidden="true" /></Link>}
+        >
 
           {dashboard.isLoading ? (
             <>
@@ -132,6 +132,14 @@ export default function VendorDashboard() {
             </div>
           ) : (
             <>
+              {/*
+                These four tiles keep their own shell rather than using WorkspacePanel: `.campus-panel`
+                is unlayered in index.css, so it outranks every Tailwind utility and would silently
+                discard BOTH the destructive emphasis border and the hover shadow below.
+                They still take the shared --radius token, so they match every other panel on the
+                page — before Phase 1 all six panels here were rounded-xl, and the tiles were never
+                distinguished by radius, only by the emphasis border.
+              */}
               <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Store priorities">
                 {metrics.map(metric => {
                   const Icon = metric.icon;
@@ -140,7 +148,7 @@ export default function VendorDashboard() {
                     <Link
                       key={metric.label}
                       href={metric.href}
-                      className={`group rounded-xl border bg-card p-5 transition-shadow hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)] ${metric.emphasis ? "border-destructive/30" : "border-border"}`}
+                      className={`group rounded-[var(--radius)] border bg-card p-5 transition-shadow hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)] ${metric.emphasis ? "border-destructive/30" : "border-border"}`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <span className={`text-[11px] font-bold uppercase tracking-[0.09em] ${metric.emphasis ? "text-destructive" : "text-muted-foreground"}`}>{metric.label}</span>
@@ -159,7 +167,7 @@ export default function VendorDashboard() {
               </section>
 
               <div className="mt-6 grid gap-5 lg:grid-cols-3">
-                <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card lg:col-span-2" aria-label="Recent orders">
+                <WorkspacePanel as="section" padding="none" className="flex flex-col overflow-hidden lg:col-span-2" aria-label="Recent orders">
                   <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
                     <div>
                       <h2 className="text-lg font-bold tracking-[-0.02em]">Recent orders</h2>
@@ -224,9 +232,9 @@ export default function VendorDashboard() {
                       <EmptyPanel title="No orders yet" detail="New student orders will appear here as soon as they are placed." />
                     </div>
                   )}
-                </section>
+                </WorkspacePanel>
 
-                <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card" aria-label="Inventory alerts">
+                <WorkspacePanel as="section" padding="none" className="flex flex-col overflow-hidden" aria-label="Inventory alerts">
                   <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
                     <div>
                       <h2 className="text-lg font-bold tracking-[-0.02em]">Inventory alert</h2>
@@ -263,10 +271,10 @@ export default function VendorDashboard() {
                       View full inventory
                     </Link>
                   </div>
-                </section>
+                </WorkspacePanel>
               </div>
 
-              <section className="mt-6 rounded-xl border border-border bg-card p-5 sm:p-6" aria-label="Pickup location">
+              <WorkspacePanel as="section" padding="comfortable" className="mt-6" aria-label="Pickup location">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                   <div>
                     <h2 className="text-lg font-bold tracking-[-0.02em]">Pickup location</h2>
@@ -301,10 +309,10 @@ export default function VendorDashboard() {
                     </Button>
                   </form>
                 )}
-              </section>
+              </WorkspacePanel>
             </>
           )}
-        </div>
+        </WorkspacePage>
       </WorkspaceGate>
     </DashboardLayout>
   );
