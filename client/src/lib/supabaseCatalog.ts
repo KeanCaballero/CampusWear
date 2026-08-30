@@ -512,8 +512,28 @@ export async function listNotifications(): Promise<NotificationItem[]> {
 
 export async function markNotificationRead(notificationId: string): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", notificationId).is("read_at", null);
+  // PostgREST answers 200 with an empty array when a write matches no rows: an RLS-filtered or
+  // already-read UPDATE is NOT an error. Without `select()` there is no representation to inspect,
+  // so this reported success while changing nothing — the student clicked Read and the badge stayed.
+  const { data: marked, error } = await client
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", notificationId)
+    .is("read_at", null)
+    .select("id");
   if (error) throw error;
+  if (marked?.length) return;
+
+  // Zero rows means either the notification was already read — harmless, another tab or a double
+  // click — or it is not readable by this user at all. Only the second is a real failure, so
+  // establish which rather than swallowing both.
+  const { data: existing, error: lookupError } = await client
+    .from("notifications")
+    .select("read_at")
+    .eq("id", notificationId)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (!existing) throw new UserFacingError("That notification is no longer available.");
 }
 
 export function notificationsQueryKey(userId: string | number | null | undefined) {

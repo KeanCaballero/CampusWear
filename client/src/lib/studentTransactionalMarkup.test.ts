@@ -23,7 +23,11 @@ describe("Pasted Content 11/12 transactional student redesign", () => {
 
   it("keeps unread notifications visibly actionable without relying on color alone", () => {
     expect(notifications).toContain("<CheckCircle2");
-    expect(notifications).toContain(">Read</Button>");
-    expect(notifications).toContain("disabled={markRead.isPending}");
+    // The label is now conditional so only the row being marked shows progress. The guarantee this
+    // protects is unchanged: the control carries a TEXT label, not colour alone.
+    expect(notifications).toContain('"Read"');
+    expect(notifications).toContain('"Marking…"');
+    // Per-row, so one pending mark no longer freezes every other notification's button.
+    expect(notifications).toContain("markRead.isPending && markRead.variables === alert.id");
   });
 });
