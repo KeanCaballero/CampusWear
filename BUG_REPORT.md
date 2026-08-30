@@ -655,11 +655,13 @@ Except for the GitHub/Vercel release match, which has been re-verified at `0881c
 [3] [Supabase Auth user-management documentation](https://supabase.com/docs/guides/auth/managing-user-data)
 
 
-### BUG-016 — Platform RPC return-type mismatch remains unresolved in live schema
+### BUG-016 — Platform RPC return-type mismatch — RESOLVED (migration applied 2026-08-30)
 
 **Classification:** **NEEDS REAL-ACCOUNT VERIFICATION / EXTERNAL DEPENDENCY**  
 **Status:** Open — live repair persistence and Account Directory output require confirmation  
 **Area:** Platform Accounts and Platform Team RPCs
+
+> **Superseded.** The Classification, Status, and next-step lines in this original entry are retained verbatim for the historical record. See the 2026-08-30 entries below for the corrected root cause and the current resolved state.
 
 The precise PostgreSQL failure is `42804`: `auth.users.email` is `character varying(255)` while the RPC return contract declares `email text` (column 2). The approved source migration `20260828050000_fix_platform_rpc_email_type.sql` now contains `u.email::text` in both `list_platform_accounts` and `list_platform_team_members`, preserves the existing platform-admin gate, `security definer`, search path, filters, fields, and authenticated-only grants, and is covered by `platformRpcMigrationContract.test.ts`.
 
@@ -669,7 +671,7 @@ The Supabase SQL Editor submission did not produce a reliable execution confirma
 
 #### 2026-08-30 update — root cause corrected, source drift closed
 
-**Revised status:** Open — corrected migration added in source; **not yet applied to the live project**.
+**Status at the time of this entry:** Open — corrected migration added in source; not yet applied to the live project. *(Superseded — applied to production later the same day; see the resolution entry below.)*
 
 **The `42804` attribution above is incorrect.** Read-only catalog inspection of the live project (PostgreSQL 17.6) shows `character varying` → `text` is registered in `pg_cast` as `castmethod = 'b'` (binary) with `castcontext = 'i'` (implicit). `convert_tuples_by_position()` — the routine that emits *"structure of query does not match function result type"* — raises only for pairs that are **not** binary coercible. A `varchar(255)` value returned into a declared `text` column therefore does **not** raise `42804`. The earlier `42804` was inferred from catalog metadata rather than observed at runtime, and the live Team page rendering its **empty** state rather than its **error** state is consistent with the RPC having succeeded.
 
@@ -701,7 +703,37 @@ Column-by-column check of the live function against its declared contract found 
 
 **Therefore:** this migration is a **contract-hygiene / drift-closure** change. It must **not** be described as fixing a confirmed production outage, and the `42804` attribution in the original entry above must not be repeated as proven.
 
-**Required next step:** apply the new migration to the live project through the proper migration path, then confirm with an authorized platform-admin session that `/platform/team` lists the expected members.
+**Next step at the time of this entry:** apply the new migration to the live project through the proper migration path, then confirm with an authorized platform-admin session that `/platform/team` lists the expected members. *(The apply step is done — see the resolution entry below. The platform-admin confirmation remains outstanding.)*
+
+#### 2026-08-30 resolution — migration applied to production, drift closed
+
+**Status: RESOLVED (drift closed).** The migration is applied to the live Supabase project, and the repository and production database are now in sync.
+
+| | |
+|---|---|
+| Repository migration | `supabase/migrations/20260830120000_fix_platform_team_members_email_type.sql` |
+| Merged to `main` as | `88cd22e` (PR #8 — 1 commit, 3 files, +209/−0) |
+| Live migration ledger entry | `20260830112520 fix_platform_team_members_email_type` |
+| Ledger count | 17 → 18 |
+| Production deployment | `88cd22e`, state `success`, healthy (HTTP 200) |
+
+The ledger version (`20260830112520`) differs from the repository filename prefix (`20260830120000`) because the apply mechanism assigns its own timestamp; the migration *name* matches. The same happened with `20260830090000_fix_product_delete_policy_recursion.sql`, recorded as `20260829234001`.
+
+**Post-apply verification (read-only):**
+
+- Live `list_platform_team_members` contains `u.email::text`, and exactly one `::` cast in the entire body — the no-op `p.updated_at::timestamptz` was not introduced.
+- `security definer` unchanged; pinned `search_path = public, private, auth, pg_temp` unchanged.
+- `private.is_platform_admin()`, the `auth.uid() is null` guard, and the `42501` error code are all present and unchanged.
+- EXECUTE grants are `authenticated`, `postgres`, `service_role` — identical to before; `has_function_privilege('anon', ...)` returns `false`.
+- Return columns and their order are unchanged.
+- `list_platform_accounts` was not touched and retains its own `::text` cast.
+
+**No data was modified.** Counts before → after: products 3 → 3, orders 5 → 5, order_items 5 → 5, product_variants 6 → 6, inventory 6 rows / 15 units → 6 rows / 15 units, profiles 9 → 9, vendors 2 → 2. No rows created, updated, or deleted; no users created; no RLS, role, or authorization change.
+
+**Runtime verification: still NOT PROVEN.** No authenticated platform-admin session was available, and none was fabricated. The `42501` guard raises before any return-path type check, so the RPC's return path remains unexercised. Applying the migration does not change that.
+
+**This remains a contract-hygiene / migration-drift fix.** The historical `42804` was never observed at runtime and is not claimed to have been fixed — the binary-coercibility finding recorded above stands as evidence against that outage having occurred. What is now closed is the repository/production drift, and nothing beyond it.
+
 
 
 ---
