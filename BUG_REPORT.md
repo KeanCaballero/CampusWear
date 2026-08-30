@@ -667,6 +667,42 @@ The Supabase SQL Editor submission did not produce a reliable execution confirma
 
 **Required next step:** verify the persisted live function definitions and execute the approved function-only correction through a confirmed CampusWear Supabase project-scoped SQL path, then verify both RPC responses and route logs. Do not mark this item resolved or declare final acceptance based solely on the UI’s empty state.
 
+#### 2026-08-30 update — root cause corrected, source drift closed
+
+**Revised status:** Open — corrected migration added in source; **not yet applied to the live project**.
+
+**The `42804` attribution above is incorrect.** Read-only catalog inspection of the live project (PostgreSQL 17.6) shows `character varying` → `text` is registered in `pg_cast` as `castmethod = 'b'` (binary) with `castcontext = 'i'` (implicit). `convert_tuples_by_position()` — the routine that emits *"structure of query does not match function result type"* — raises only for pairs that are **not** binary coercible. A `varchar(255)` value returned into a declared `text` column therefore does **not** raise `42804`. The earlier `42804` was inferred from catalog metadata rather than observed at runtime, and the live Team page rendering its **empty** state rather than its **error** state is consistent with the RPC having succeeded.
+
+**What was genuinely wrong** is repository/production drift, confirmed by metadata:
+
+| Function | Live definition | Repo intent |
+|---|---|---|
+| `list_platform_accounts` | has `u.email::text` | has cast |
+| `list_platform_team_members` | **no cast** | has cast |
+
+Migration `20260828050000_fix_platform_rpc_email_type.sql` is **not recorded** in `supabase_migrations.schema_migrations`, so only half of its intent reached production.
+
+Column-by-column check of the live function against its declared contract found `email` to be the **only** mismatch — `full_name` is already `text` and `updated_at` is already `timestamptz`, making the earlier migration's `p.updated_at::timestamptz` cast a no-op.
+
+**Correction added:** `supabase/migrations/20260830120000_fix_platform_team_members_email_type.sql`, append-only, body-only. Normalized comparison against the live definition confirms the sole difference is `u.email` → `u.email::text`; reverting that cast reproduces the live body exactly. The platform-admin guard, its `42501` error code, `security definer`, the pinned `search_path`, all five columns, their order, and the `order by p.created_at` are unchanged, and execute permissions are restated without broadening (`anon`/`public` remain without `EXECUTE`). Covered by `platformTeamMembersEmailTypeMigration.test.ts`.
+
+**Verification status — stated precisely.**
+
+**CONFIRMED (evidence-backed):**
+
+1. **Repository/production migration drift exists.** `20260828050000_fix_platform_rpc_email_type.sql` is not recorded in `supabase_migrations.schema_migrations`.
+2. **The explicit email cast is absent from production.** Live `list_platform_team_members` returns `u.email` uncast; its sibling `list_platform_accounts` carries `u.email::text`.
+3. **The new append-only migration adds the cast.** Normalized comparison against the live definition shows one substitution, `u.email` → `u.email::text`; reverting it reproduces the live body exactly.
+4. **`varchar` → `text` is binary coercible in the checked PostgreSQL version (17.6).** `pg_cast` records `castmethod = 'b'`, `castcontext = 'i'`, `castfunc = 0`.
+
+**NOT CONFIRMED:**
+
+1. **That the live function currently throws `42804` at runtime.** This has never been observed. It cannot be exercised without an authenticated platform-admin session, because the admin guard raises `42501` before any return-path type check. No workaround function was created to bypass that guard, by instruction. Finding 4 above is in fact positive evidence *against* a `42804` on this column.
+
+**Therefore:** this migration is a **contract-hygiene / drift-closure** change. It must **not** be described as fixing a confirmed production outage, and the `42804` attribution in the original entry above must not be repeated as proven.
+
+**Required next step:** apply the new migration to the live project through the proper migration path, then confirm with an authorized platform-admin session that `/platform/team` lists the expected members.
+
 
 ---
 
