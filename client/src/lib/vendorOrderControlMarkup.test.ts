@@ -23,7 +23,9 @@ describe("VendorOrderTransitionControl", () => {
     const { readFileSync } = await import("node:fs");
     const page = readFileSync(new URL("../pages/vendor/VendorOrders.tsx", import.meta.url), "utf8");
 
-    expect(page).toContain('className="mt-7 flex flex-wrap gap-2"');
+    // The filter row now sits inside the search toolbar panel, so its top margin changed from
+    // mt-7 to mt-3. The guarantee this protects — wrapping, touch-ready chips — is unchanged.
+    expect(page).toContain('className="mt-3 flex flex-wrap gap-2"');
     expect(page).toContain('className={filter === option.value ? "" : "bg-card"}');
     expect(page).toContain('aria-live="polite"');
   });
