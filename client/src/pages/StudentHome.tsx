@@ -1,3 +1,4 @@
+import { CampusWearMark } from "@/components/campuswear/BrandMark";
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
 import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
 import { isStalledWithoutData } from "@/lib/queryState";
@@ -31,6 +32,11 @@ export default function StudentHome() {
   }
 
   const featured = catalog.data?.slice(0, 4) ?? [];
+  // The hero's wide-screen second column reuses the catalogue already fetched for this page, so it
+  // costs no extra request and shows a real product rather than invented marketing content. While
+  // the query is loading, offline, failed, or genuinely empty this is undefined and the column
+  // falls back to the brand panel — the catalogue section below still owns all state messaging.
+  const spotlight = featured[0];
   // A paused query has no data and is neither loading nor errored, so it needs its own branch.
   const catalogOffline = isStalledWithoutData(catalog);
   const noticesOffline = isStalledWithoutData(notices);
@@ -47,51 +53,88 @@ export default function StudentHome() {
       <main className="container py-5 sm:py-8">
         <section className="relative isolate overflow-hidden rounded-xl bg-primary px-5 py-7 text-primary-foreground sm:px-8 sm:py-9">
           <div className="pointer-events-none absolute inset-0 z-0 campus-grid opacity-10" aria-hidden="true" />
-          <div className="relative z-10">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-blue-200">Student workspace</p>
-            <h1 className="mt-2.5 max-w-xl text-2xl font-extrabold leading-tight tracking-[-0.03em] sm:text-3xl">
-              {firstName ? `Welcome back, ${firstName}.` : "Your campus store, before the trip."}
-            </h1>
-            <p className="mt-2.5 max-w-md text-sm leading-6 text-blue-100">
-              Check what is in stock, pick your size, and reserve it for pickup.
-            </p>
+          {/* Below lg this stays a single stacked column, exactly as before. From lg up it becomes
+              two columns so the panel is no longer ~half empty navy at 1440px and 1920px. */}
+          <div className="relative z-10 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center lg:gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:gap-10">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-blue-200">Student workspace</p>
+              <h1 className="mt-2.5 max-w-xl text-2xl font-extrabold leading-tight tracking-[-0.03em] sm:text-3xl lg:max-w-2xl xl:text-4xl">
+                {firstName ? `Welcome back, ${firstName}.` : "Your campus store, before the trip."}
+              </h1>
+              {/* Prose keeps its measure: widening body copy hurts readability, so only the
+                  controls below are allowed to grow into the wider column. */}
+              <p className="mt-2.5 max-w-md text-sm leading-6 text-blue-100">
+                Check what is in stock, pick your size, and reserve it for pickup.
+              </p>
 
-            <form onSubmit={submitSearch} role="search" className="mt-5 flex flex-col gap-2 sm:max-w-lg sm:flex-row">
-              <label className="relative flex-1">
-                <span className="sr-only">Search the campus catalog</span>
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  value={searchText}
-                  onChange={event => setSearchText(event.target.value)}
-                  placeholder="Search uniforms, PE sets, shirts…"
-                  type="search"
-                  className="min-h-12 border-transparent bg-card pl-10 text-foreground"
-                />
-              </label>
-              <Button type="submit" className="min-h-12 bg-campus-blue px-5 font-bold text-white hover:bg-campus-blue/90">Search</Button>
-            </form>
+              <form onSubmit={submitSearch} role="search" className="mt-5 flex flex-col gap-2 sm:max-w-lg sm:flex-row lg:max-w-none">
+                <label className="relative flex-1">
+                  <span className="sr-only">Search the campus catalog</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    value={searchText}
+                    onChange={event => setSearchText(event.target.value)}
+                    placeholder="Search uniforms, PE sets, shirts…"
+                    type="search"
+                    className="min-h-12 border-transparent bg-card pl-10 text-foreground"
+                  />
+                </label>
+                <Button type="submit" className="min-h-12 bg-campus-blue px-5 font-bold text-white hover:bg-campus-blue/90">Search</Button>
+              </form>
 
-            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:max-w-lg">
-              <Link
-                href="/shop"
-                className="flex min-h-16 items-center gap-3 rounded-xl bg-white/10 px-4 text-left transition-colors hover:bg-white/20"
-              >
-                <PackageSearch className="size-5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-200">Browse</span>
-                  <span className="block truncate text-sm font-bold">Catalog</span>
-                </span>
-              </Link>
-              <Link
-                href="/orders"
-                className="flex min-h-16 items-center gap-3 rounded-xl bg-white/10 px-4 text-left transition-colors hover:bg-white/20"
-              >
-                <ClipboardList className="size-5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-200">Track</span>
-                  <span className="block truncate text-sm font-bold">My orders</span>
-                </span>
-              </Link>
+              <div className="mt-4 grid grid-cols-2 gap-2.5 sm:max-w-lg lg:max-w-none">
+                <Link
+                  href="/shop"
+                  className="flex min-h-16 items-center gap-3 rounded-xl bg-white/10 px-4 text-left transition-colors hover:bg-white/20"
+                >
+                  <PackageSearch className="size-5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-200">Browse</span>
+                    <span className="block truncate text-sm font-bold">Catalog</span>
+                  </span>
+                </Link>
+                <Link
+                  href="/orders"
+                  className="flex min-h-16 items-center gap-3 rounded-xl bg-white/10 px-4 text-left transition-colors hover:bg-white/20"
+                >
+                  <ClipboardList className="size-5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-200">Track</span>
+                    <span className="block truncate text-sm font-bold">My orders</span>
+                  </span>
+                </Link>
+              </div>
+            </div>
+
+            {/* Wide-screen only. Hidden below lg so mobile and tablet keep the stacked composition
+                rather than inheriting a desktop layout. */}
+            <div className="hidden lg:block">
+              {spotlight ? (
+                <Link
+                  href={`/shop/${spotlight.id}`}
+                  aria-label={`View ${spotlight.name}`}
+                  className="group block rounded-2xl border border-white/15 bg-white/10 p-3 transition-colors hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-gold"
+                >
+                  <ProductVisual name={spotlight.name} imageUrl={spotlight.imageUrl} className="aspect-[16/10] w-full rounded-xl" />
+                  <div className="px-1 pb-0.5 pt-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-campus-gold">In the catalog now</p>
+                    <p className="mt-1.5 truncate text-sm font-extrabold">{spotlight.name}</p>
+                    <div className="mt-1.5 flex items-baseline justify-between gap-3">
+                      <span className="text-base font-extrabold tabular-nums">{formatPeso(spotlight.priceInCentavos)}</span>
+                      <span className="inline-flex min-w-0 items-center gap-1 text-[11px] font-semibold text-blue-200">
+                        <Store className="size-3 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{spotlight.vendorName}</span>
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ) : (
+                <div className="grid place-items-center rounded-2xl border border-white/15 bg-white/5 px-6 py-12 text-center">
+                  <CampusWearMark variant="reversed" className="size-12" />
+                  <p className="mt-3 text-sm font-extrabold">Your Uniform. Your Identity.</p>
+                  <p className="mt-1.5 text-xs leading-5 text-blue-200">Live stock from your campus's authorized stores.</p>
+                </div>
+              )}
             </div>
           </div>
         </section>
