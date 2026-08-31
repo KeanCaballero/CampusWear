@@ -87,11 +87,15 @@ describe("pickup code", () => {
     expect(component).not.toMatch(/orderNumber\.(slice|substring|replace|split)/);
   });
 
-  it("renders no QR and implies no scanning flow", () => {
-    const component = read("../components/campuswear/PickupCode.tsx");
-    expect(component).not.toMatch(/<canvas|qrcode|QRCode|<svg/i);
-    // It must not claim the code completes or verifies anything.
-    expect(code("../components/campuswear/PickupCode.tsx")).not.toMatch(/scan to (complete|confirm)|mark(ed)? as picked up/i);
+  it("now renders a real QR, but still implies no scanning-completes-the-order flow", () => {
+    // The QR deferral was lifted deliberately: a scannable code is now authorised. What must
+    // NOT change is that the student component performs no mutation — scanning identifies an
+    // order, it never completes one.
+    const component = code("../components/campuswear/PickupCode.tsx");
+    expect(component).toContain("<canvas");
+    expect(component).not.toMatch(/scan to (complete|confirm)|mark(ed)? as picked up/i);
+    expect(component).not.toContain("transition_order_status");
+    expect(component).not.toContain("useMutation");
   });
 
   it("exposes no personal data — only the order reference", () => {

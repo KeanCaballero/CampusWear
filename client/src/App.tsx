@@ -26,6 +26,7 @@ import VendorAnnouncements from "./pages/vendor/VendorAnnouncements";
 import VendorDashboard from "./pages/vendor/VendorDashboard";
 import VendorInventory from "./pages/vendor/VendorInventory";
 import VendorOrders from "./pages/vendor/VendorOrders";
+import VendorPickup from "./pages/vendor/VendorPickup";
 import VendorProducts from "./pages/vendor/VendorProducts";
 import VendorReports from "./pages/vendor/VendorReports";
 
@@ -47,6 +48,7 @@ function Router() {
     <Route path="/vendor" component={VendorDashboard} />
     <Route path="/vendor/apply" component={VendorApplication} />
     <Route path="/vendor/orders" component={VendorOrders} />
+    <Route path="/vendor/pickup" component={VendorPickup} />
     <Route path="/vendor/inventory" component={VendorInventory} />
     <Route path="/vendor/products" component={VendorProducts} />
     <Route path="/vendor/announcements" component={VendorAnnouncements} />
