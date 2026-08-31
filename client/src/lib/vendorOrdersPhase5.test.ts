@@ -161,7 +161,9 @@ describe("G. status wording distinguishes current state from the action", () => 
       createElement(VendorOrderTransitionControl, { status: "completed", isPending: false, onStatusChange: () => undefined }),
     );
     expect(markup).toContain('role="status"');
-    expect(markup).toContain("Finalized — no further updates");
+    // "Finalized" read identically for a fulfilled pickup and an abandoned one. The terminal note
+    // now names the actual outcome, and still promises nothing beyond it.
+    expect(markup).toContain("Completed — no further updates.");
     expect(markup).not.toContain("Update status");
   });
 

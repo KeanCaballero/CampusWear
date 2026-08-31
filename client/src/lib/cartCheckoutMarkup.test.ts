@@ -203,12 +203,21 @@ describe("pickup information stays honest", () => {
     expect(plaqueCode).not.toMatch(/Mon–Fri|Monday|opening hours/i);
   });
 
-  it("states plainly when details are not yet available", () => {
-    expect(plaque).toContain("Pickup details will be shown");
+  it("shows the store's own declared collection point rather than a placeholder", () => {
+    // vendors.pickup_location is real data the vendor maintains. It is now surfaced instead of the
+    // old "details will be shown later" placeholder, which told the student nothing.
+    expect(plaque).toContain("locations");
+    expect(plaque).toContain("Collect at");
   });
 
-  it("records why the richer plaque is not built yet", () => {
-    expect(plaque).toContain("get_public_catalog");
+  it("still says only what is true when no location can be resolved", () => {
+    // The fallback must not name a place. It may only say the store will confirm.
+    expect(plaque).toContain("The store confirms the collection point when your order is ready.");
+  });
+
+  it("names each store when their collection points differ", () => {
+    expect(plaque).toContain("entry.vendorName");
+    expect(plaque).toContain("entry.pickupLocation");
   });
 });
 

@@ -18,7 +18,7 @@ function statementFor(marker: string) {
   return line;
 }
 
-const studentOrdersQuery = statementFor('order_items(product_name, variant_size)');
+const studentOrdersQuery = statementFor('order_items(product_name, variant_size, quantity, line_total_in_centavos)');
 const vendorOrdersQuery = statementFor('order_items(product_name, variant_size, quantity)');
 
 describe("order_items stores an immutable snapshot of the purchase", () => {
@@ -42,7 +42,11 @@ describe("order_items stores an immutable snapshot of the purchase", () => {
 
 describe("history reads snapshots, never the live product row", () => {
   it("student order history does not join products or product_variants", () => {
-    expect(studentOrdersQuery).toContain("order_items(product_name, variant_size)");
+    // Quantity and the line total are snapshot columns on order_items too, so surfacing them in the
+    // history keeps the same guarantee: nothing here depends on a mutable product row.
+    for (const snapshotColumn of ["product_name", "variant_size", "quantity", "line_total_in_centavos"]) {
+      expect(studentOrdersQuery).toContain(snapshotColumn);
+    }
     expect(studentOrdersQuery).not.toContain("products(");
     expect(studentOrdersQuery).not.toContain("product_variants(");
   });

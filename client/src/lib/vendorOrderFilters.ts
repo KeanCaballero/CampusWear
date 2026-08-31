@@ -32,3 +32,21 @@ export function searchVendorOrders(orders: VendorOrder[], term: string) {
     order.items.some(item => item.productName.toLowerCase().includes(needle) || item.size.toLowerCase().includes(needle)),
   );
 }
+
+/**
+ * How many orders each status filter would show, given the current search term.
+ *
+ * Derived entirely from the order array already in memory — no extra request, and nothing counted
+ * that the vendor cannot already see, because the list itself is scoped by the orders SELECT
+ * policy. Counts respect the search term so a badge always matches what clicking the filter
+ * produces; a genuine zero is reported as zero rather than hidden.
+ */
+export function countVendorOrdersByFilter(orders: VendorOrder[], term = ""): Record<VendorOrderFilter, number> {
+  const searched = searchVendorOrders(orders, term);
+  const counts = Object.fromEntries(vendorOrderFilterOptions.map(option => [option.value, 0])) as Record<VendorOrderFilter, number>;
+  counts.all = searched.length;
+  for (const order of searched) {
+    if (order.status in counts) counts[order.status as VendorOrderFilter] += 1;
+  }
+  return counts;
+}

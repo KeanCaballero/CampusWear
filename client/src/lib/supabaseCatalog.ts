@@ -1,5 +1,6 @@
 import { businessDateIn, resolveBusinessTimeZone } from "@/lib/businessDate";
 import { supabase } from "@/lib/supabase";
+import { getInventoryAvailability } from "../../../server/campuswear/domain";
 
 export type Availability = "in_stock" | "low_stock" | "out_of_stock";
 
@@ -74,6 +75,16 @@ type VendorApplicationRow = {
   schools: { name: string } | { name: string }[] | null;
 };
 
+/*
+  Availability is computed in exactly one place on the client: getInventoryAvailability in
+  server/campuswear/domain.ts, which the vendor pages and this data layer now share. It was
+  previously hand-rolled three times here with the same rule copied out, so the vendor catalogue,
+  the inventory table and a freshly created product each carried their own chance of drifting.
+
+  The rule is mirrored once more in SQL, inside get_public_catalog, which is what students see. That
+  copy cannot import TypeScript, so it stays — but it is the only remaining duplicate, and both
+  express the same thresholds: quantity <= 0 is out of stock, quantity <= low_stock_threshold is low.
+*/
 function requireSupabase() {
   if (!supabase) throw new Error("CampusWear’s data service is not configured.");
   return supabase;
@@ -466,6 +477,43 @@ export async function updateCartItem(input: { variantId: string; quantity: numbe
   if (!changed?.length) throw new UserFacingError("That item is no longer in your cart. Refresh to see the latest version.");
 }
 
+export type StorePickupLocation = { vendorName: string; pickupLocation: string };
+
+export function cartPickupLocationsQueryKey(storeNames: readonly string[]) {
+  return ["supabase-cart-pickup-locations", [...storeNames].sort().join("|")] as const;
+}
+
+/**
+ * The pickup points the stores in a cart actually use.
+ *
+ * `vendors.pickup_location` is the store's own declared collection point — the same value the
+ * vendor edits in their workspace. It was never exposed to students, so checkout asked them to type
+ * a pickup location free-hand, and production orders now carry values like "idk" and "groundfloor"
+ * that the vendor then sees on their fulfilment queue.
+ *
+ * Scope note: readability is decided by RLS — `authenticated view authorized vendors` exposes rows
+ * where `is_active AND is_authorized` (plus a vendor's or school operator's own). The predicates
+ * below are display filters matching that intent, not the security boundary. Stores are matched by
+ * the name the public catalogue already returned, because `get_public_catalog` exposes
+ * `vendor_name` and no vendor id; an unmatched store simply yields no option and the caller falls
+ * back to free text rather than inventing a location.
+ */
+export async function listPickupLocationsForStores(storeNames: readonly string[]): Promise<StorePickupLocation[]> {
+  if (!storeNames.length) return [];
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("vendors")
+    .select("name, pickup_location")
+    .in("name", [...storeNames])
+    .eq("is_active", true)
+    .eq("is_authorized", true)
+    .order("name");
+  if (error) throw error;
+  return (data ?? [])
+    .filter((vendor: { pickup_location: string | null }) => Boolean(vendor.pickup_location?.trim()))
+    .map((vendor: { name: string; pickup_location: string }) => ({ vendorName: vendor.name, pickupLocation: vendor.pickup_location.trim() }));
+}
+
 export type PlacedOrder = { id: string; orderNumber: string; totalInCentavos: number; pickupLocation: string };
 
 /**
@@ -487,11 +535,17 @@ export type StudentOrder = {
   status: "pending" | "confirmed" | "preparing" | "ready_for_pickup" | "completed" | "cancelled" | "rejected";
   pickupStatus: "scheduled" | "ready" | "picked_up";
   pickupLocation: string;
-  pickupAt: string | null;
+  /**
+   * Written only by the transition to `completed`. `orders.pickup_at` is deliberately NOT exposed:
+   * nothing in the codebase ever writes it (checkout passes `pickup_at_input: null`), so it can
+   * only ever render as a placeholder.
+   */
+  completedAt: string | null;
   totalInCentavos: number;
   vendorName: string;
   schoolName: string;
-  items: Array<{ productName: string; size: string }>;
+  /** Quantity and line total come straight from order_items; nothing here is derived or inferred. */
+  items: Array<{ productName: string; size: string; quantity: number; lineTotalInCentavos: number }>;
 };
 
 export async function listStudentOrders(): Promise<StudentOrder[]> {
@@ -499,7 +553,7 @@ export async function listStudentOrders(): Promise<StudentOrder[]> {
   const { data: { user }, error: userError } = await client.auth.getUser();
   if (userError) throw userError;
   if (!user) throw new Error("Sign in to view orders.");
-  const { data, error } = await client.from("orders").select("id, order_number, status, pickup_status, pickup_location, pickup_at, total_in_centavos, vendors(name), schools(name), order_items(product_name, variant_size)").eq("student_id", user.id).order("placed_at", { ascending: false });
+  const { data, error } = await client.from("orders").select("id, order_number, status, pickup_status, pickup_location, completed_at, total_in_centavos, vendors(name), schools(name), order_items(product_name, variant_size, quantity, line_total_in_centavos)").eq("student_id", user.id).order("placed_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((order: any) => ({
     id: order.id,
@@ -507,11 +561,11 @@ export async function listStudentOrders(): Promise<StudentOrder[]> {
     status: order.status,
     pickupStatus: order.pickup_status,
     pickupLocation: order.pickup_location,
-    pickupAt: order.pickup_at,
+    completedAt: order.completed_at,
     totalInCentavos: order.total_in_centavos,
     vendorName: order.vendors?.name ?? "Authorized vendor",
     schoolName: order.schools?.name ?? "CampusWear school",
-    items: (order.order_items ?? []).map((item: any) => ({ productName: item.product_name, size: item.variant_size })),
+    items: (order.order_items ?? []).map((item: any) => ({ productName: item.product_name, size: item.variant_size, quantity: item.quantity, lineTotalInCentavos: item.line_total_in_centavos })),
   }));
 }
 
@@ -683,7 +737,7 @@ export async function listManagedProducts(): Promise<ManagedProduct[]> {
   const context = await vendorContext();
   const { data, error } = await client.from("products").select("id, vendor_id, name, description, image_path, price_in_centavos, is_active, product_variants(id, size, inventory(quantity, low_stock_threshold))").eq("vendor_id", context.vendorId).order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((product: any) => ({ id: product.id, vendorId: product.vendor_id, name: product.name, description: product.description, imageUrl: imageUrlFor(product.image_path), priceInCentavos: product.price_in_centavos, isActive: product.is_active, variants: (product.product_variants ?? []).map((variant: any) => { const inventory = Array.isArray(variant.inventory) ? variant.inventory[0] : variant.inventory; const quantity = inventory?.quantity ?? 0; const threshold = inventory?.low_stock_threshold ?? 5; return { id: variant.id, size: variant.size, quantity, lowStockThreshold: threshold, availability: quantity <= 0 ? "out_of_stock" : quantity <= threshold ? "low_stock" : "in_stock" }; }) }));
+  return (data ?? []).map((product: any) => ({ id: product.id, vendorId: product.vendor_id, name: product.name, description: product.description, imageUrl: imageUrlFor(product.image_path), priceInCentavos: product.price_in_centavos, isActive: product.is_active, variants: (product.product_variants ?? []).map((variant: any) => { const inventory = Array.isArray(variant.inventory) ? variant.inventory[0] : variant.inventory; const quantity = inventory?.quantity ?? 0; const threshold = inventory?.low_stock_threshold ?? 5; return { id: variant.id, size: variant.size, quantity, lowStockThreshold: threshold, availability: getInventoryAvailability({ quantity, lowStockThreshold: threshold }) }; }) }));
 }
 
 export type VendorProductInput = { name: string; description: string; priceInCentavos: number; variants: Array<{ size: string; sku: string; quantity: number; lowStockThreshold: number }> };
@@ -699,7 +753,7 @@ export async function createManagedProduct(input: VendorProductInput): Promise<M
     if (variantError) throw variantError;
     const { error: inventoryError } = await client.from("inventory").insert({ variant_id: variant.id, quantity: entry.quantity, low_stock_threshold: entry.lowStockThreshold });
     if (inventoryError) throw inventoryError;
-    variants.push({ id: variant.id, size: variant.size, quantity: entry.quantity, lowStockThreshold: entry.lowStockThreshold, availability: entry.quantity <= 0 ? "out_of_stock" : entry.quantity <= entry.lowStockThreshold ? "low_stock" : "in_stock" });
+    variants.push({ id: variant.id, size: variant.size, quantity: entry.quantity, lowStockThreshold: entry.lowStockThreshold, availability: getInventoryAvailability({ quantity: entry.quantity, lowStockThreshold: entry.lowStockThreshold }) });
   }
   return { id: product.id, vendorId: product.vendor_id, name: product.name, description: product.description, imageUrl: imageUrlFor(product.image_path), priceInCentavos: product.price_in_centavos, isActive: product.is_active, variants };
 }
@@ -814,7 +868,7 @@ export async function listVendorInventory(): Promise<VendorInventoryItem[]> {
   const context = await vendorContext();
   const { data, error } = await client.from("products").select("name, product_variants(id, size, sku, inventory(quantity, low_stock_threshold))").eq("vendor_id", context.vendorId).order("name");
   if (error) throw error;
-  return (data ?? []).flatMap((product: any) => (product.product_variants ?? []).map((variant: any) => { const inventory = Array.isArray(variant.inventory) ? variant.inventory[0] : variant.inventory; const quantity = inventory?.quantity ?? 0; const lowStockThreshold = inventory?.low_stock_threshold ?? 5; return { variantId: variant.id, productName: product.name, size: variant.size, sku: variant.sku, quantity, lowStockThreshold, availability: quantity <= 0 ? "out_of_stock" : quantity <= lowStockThreshold ? "low_stock" : "in_stock" }; }));
+  return (data ?? []).flatMap((product: any) => (product.product_variants ?? []).map((variant: any) => { const inventory = Array.isArray(variant.inventory) ? variant.inventory[0] : variant.inventory; const quantity = inventory?.quantity ?? 0; const lowStockThreshold = inventory?.low_stock_threshold ?? 5; return { variantId: variant.id, productName: product.name, size: variant.size, sku: variant.sku, quantity, lowStockThreshold, availability: getInventoryAvailability({ quantity, lowStockThreshold }) }; }));
 }
 
 export async function updateVendorInventory(input: { variantId: string; quantity: number; lowStockThreshold: number }): Promise<void> {

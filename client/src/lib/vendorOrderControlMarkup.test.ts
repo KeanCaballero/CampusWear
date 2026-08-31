@@ -8,7 +8,9 @@ describe("VendorOrderTransitionControl", () => {
     const markup = renderToStaticMarkup(createElement(VendorOrderTransitionControl, { status: "completed", isPending: false, onStatusChange: () => undefined }));
 
     expect(markup).toContain('role="status"');
-    expect(markup).toContain("Finalized — no further updates");
+    // "Finalized" read identically for a fulfilled pickup and an abandoned one. The terminal note
+    // now names the actual outcome, and still promises nothing beyond it.
+    expect(markup).toContain("Completed — no further updates.");
     expect(markup).not.toContain("Update status");
   });
 
@@ -26,7 +28,9 @@ describe("VendorOrderTransitionControl", () => {
     // The filter row now sits inside the search toolbar panel, so its top margin changed from
     // mt-7 to mt-3. The guarantee this protects — wrapping, touch-ready chips — is unchanged.
     expect(page).toContain('className="mt-3 flex flex-wrap gap-2"');
-    expect(page).toContain('className={filter === option.value ? "" : "bg-card"}');
+    // The chips now carry a count, so the class expression became a template literal that also
+    // pins a 44px touch target. The guarantee protected here — wrapping, touch-ready chips — holds.
+    expect(page).toContain('className={`min-h-11 ${filter === option.value ? "" : "bg-card"}`}');
     expect(page).toContain('aria-live="polite"');
   });
 });

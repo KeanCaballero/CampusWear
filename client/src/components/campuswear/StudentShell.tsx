@@ -5,6 +5,9 @@ import { BrandMark } from "./BrandMark";
 import { OfflineNotice } from "./OfflineNotice";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canUseStudentWorkspace, destinationForRole } from "@/lib/authRouting";
+import { notificationAriaLabel, notificationBadgeText, unreadNotificationCount } from "@/lib/notificationBadge";
+import { listNotifications, notificationsQueryKey } from "@/lib/supabaseCatalog";
+import { useQuery } from "@tanstack/react-query";
 
 const mobileItems = [
   { label: "Home", href: "/student", icon: Home },
@@ -26,6 +29,19 @@ export function StudentShell({ children }: { children: ReactNode }) {
   const requiresAccount = ["/cart", "/orders", "/notifications", "/profile"].includes(location);
   const mustLeaveStudentWorkspace = Boolean(user && !canUseStudentWorkspace(user.role));
   const isCurrent = (href: string) => location === href;
+
+  /*
+    Same query key and same fetcher the Notifications page uses, so TanStack serves both from one
+    cache entry: no extra request, and marking a notification read updates this badge through the
+    invalidation that page already performs. RLS scopes the rows to this student's own.
+  */
+  const notifications = useQuery({
+    queryKey: notificationsQueryKey(user?.id),
+    queryFn: listNotifications,
+    enabled: !loading && Boolean(user?.id),
+  });
+  const unreadCount = unreadNotificationCount(notifications.data);
+  const unreadBadge = notificationBadgeText(unreadCount);
 
   useEffect(() => {
     if (requiresAccount && !loading && !user) {
@@ -87,10 +103,22 @@ export function StudentShell({ children }: { children: ReactNode }) {
             <Link
               href="/notifications"
               aria-current={isCurrent("/notifications") ? "page" : undefined}
-              aria-label="View notifications"
-              className={`grid size-10 place-items-center rounded-xl transition-colors ${isCurrent("/notifications") ? "bg-white/14 text-white shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"}`}
+              aria-label={notificationAriaLabel(unreadCount)}
+              className={`relative grid size-10 place-items-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-gold ${isCurrent("/notifications") ? "bg-white/14 text-white shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"}`}
             >
               <Bell className="size-4.5" aria-hidden="true" />
+              {/*
+                Decorative: the count is already in the link's accessible name, so a screen reader
+                is not told the number twice and the red dot is never the only signal.
+              */}
+              {unreadBadge && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-0.5 -top-0.5 grid min-w-[1.15rem] place-items-center rounded-full border-2 border-primary bg-destructive px-1 text-[10px] font-extrabold leading-4 tabular-nums text-white"
+                >
+                  {unreadBadge}
+                </span>
+              )}
             </Link>
             <Link
               href="/profile"
