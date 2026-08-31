@@ -2,7 +2,11 @@ import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
 import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
 import { isStalledWithoutData } from "@/lib/queryState";
 import { ProductVisual } from "@/components/campuswear/ProductVisual";
+import { FavoriteButton } from "@/components/campuswear/FavoriteButton";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { StatusBadge } from "@/components/campuswear/StatusBadge";
+import { isFavorite } from "@/lib/favorites";
+import { useFavorites } from "@/lib/useFavorites";
 import { StudentShell } from "@/components/campuswear/StudentShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +20,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "wouter";
 
 export default function Shop() {
+  const { user } = useAuth();
+  const { favorites, toggle } = useFavorites(user?.id);
   const search = useSearch();
   const queryFromUrl = new URLSearchParams(search).get("q")?.trim() ?? "";
   const [searchText, setSearchText] = useState(queryFromUrl);
@@ -163,7 +169,16 @@ export default function Shop() {
                   aria-label={`View ${product.name}`}
                   className="group rounded-xl border border-border bg-card p-2.5 transition-shadow hover:shadow-[0_4px_12px_rgb(15_39_71/0.08)]"
                 >
-                  <ProductVisual name={product.name} imageUrl={product.imageUrl} index={index} className="aspect-[1.08] w-full rounded-lg" />
+                  <div className="relative">
+                    <ProductVisual name={product.name} imageUrl={product.imageUrl} index={index} className="aspect-[1.08] w-full rounded-lg" />
+                    <FavoriteButton
+                      productId={product.id}
+                      productName={product.name}
+                      isFavorite={isFavorite(favorites, product.id)}
+                      onToggle={toggle}
+                      className="absolute right-1.5 top-1.5 shadow-sm"
+                    />
+                  </div>
                   <div className="px-1 pb-1 pt-3">
                     <p className="line-clamp-2 min-h-10 text-sm font-extrabold leading-5 tracking-[-0.02em]">{product.name}</p>
                     <p className="mt-1 text-sm font-bold tabular-nums text-primary">{formatPeso(product.priceInCentavos)}</p>

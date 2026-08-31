@@ -1,6 +1,7 @@
 import { businessDateIn, resolveBusinessTimeZone } from "@/lib/businessDate";
 import { supabase } from "@/lib/supabase";
 import { getInventoryAvailability } from "../../../server/campuswear/domain";
+import { summarizeVendorAttention } from "@/lib/vendorAttention";
 
 export type Availability = "in_stock" | "low_stock" | "out_of_stock";
 
@@ -975,6 +976,12 @@ export async function vendorDashboardData() {
     // Surfaced on the dashboard inventory panel. Reuses the inventory already fetched above,
     // so this adds no extra query.
     lowStockItems: inventory.filter(item => item.availability !== "in_stock").slice(0, 6),
+    /*
+      Low stock and out of stock split apart, from the SAME inventory array already fetched above —
+      no extra query. A vendor responds to them differently: one is a reorder reminder, the other is
+      a size students cannot buy right now. Counted across all inventory, not the display slice.
+    */
+    attention: summarizeVendorAttention(inventory),
     todaysSalesInCentavos: orders.filter(order => order.status === "completed" && Boolean(order.completedAt) && businessDateIn(order.completedAt as string, context.schoolTimeZone) === today).reduce((sum, order) => sum + order.totalInCentavos, 0),
     recentOrders: orders.slice(0, 6),
   };

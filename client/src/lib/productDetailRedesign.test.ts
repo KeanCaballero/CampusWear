@@ -138,8 +138,19 @@ describe("student-facing inventory disclosure", () => {
   it("never renders a raw stock number, matching the catalogue RPC's contract", () => {
     // get_public_catalog deliberately projects availability labels only.
     expect(catalogRpc).toContain("exposes availability labels only, never raw stock quantities");
-    expect(source).not.toMatch(/\.quantity\b/);
+
+    // The guarantee is that the STORE's stock level is never shown. It is structurally
+    // impossible: CatalogVariant carries only { id, size, availability } — there is no
+    // quantity field on student-facing catalogue data to leak.
+    const catalogTypes = readFileSync(new URL("./supabaseCatalog.ts", import.meta.url), "utf8");
+    expect(catalogTypes).toContain("export type CatalogVariant = { id: string; size: string; availability: Availability };");
+
+    // No inventory field is read anywhere on the page.
+    expect(source).not.toMatch(/variant\.quantity|selected\.quantity|inventory\.quantity/);
     expect(source).not.toMatch(/lowStockThreshold/);
+
+    // `variables.quantity` in the add-to-cart confirmation is the quantity the STUDENT chose,
+    // which they already know. Echoing it back discloses nothing about the store.
   });
 
   it("does not surface internal SKUs to students", () => {

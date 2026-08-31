@@ -7,6 +7,7 @@ import Announcements from "./pages/Announcements";
 import Auth from "./pages/Auth";
 import ConfirmedAccount from "./pages/ConfirmedAccount";
 import Cart from "./pages/Cart";
+import Favorites from "./pages/Favorites";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import Notifications from "./pages/Notifications";
@@ -38,6 +39,7 @@ function Router() {
     <Route path="/shop/:id" component={ProductDetail} />
     <Route path="/shop" component={Shop} />
     <Route path="/cart" component={Cart} />
+    <Route path="/favorites" component={Favorites} />
     <Route path="/orders" component={Orders} />
     <Route path="/announcements" component={Announcements} />
     <Route path="/notifications" component={Notifications} />

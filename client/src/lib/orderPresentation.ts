@@ -103,3 +103,14 @@ export function orderProgressIndex(status: OrderStatus): number | null {
 export function showsCompletedAt(status: OrderStatus, completedAt: string | null): boolean {
   return status === "completed" && Boolean(completedAt);
 }
+
+/**
+ * Whether to show the pickup code.
+ *
+ * Only once the store has marked the order ready. Before that there is nothing to collect, and
+ * showing a collection code would invite a wasted trip; afterwards the order is already completed.
+ * The code itself is `orders.order_number`, which already exists — no second identifier is derived.
+ */
+export function showsPickupCode(status: OrderStatus): boolean {
+  return status === "ready_for_pickup";
+}

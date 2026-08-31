@@ -1,4 +1,6 @@
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
+import { FavoriteButton } from "@/components/campuswear/FavoriteButton";
+import { SizeGuide } from "@/components/campuswear/SizeGuide";
 import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
 import { isStalledWithoutData } from "@/lib/queryState";
 import { ProductVisual } from "@/components/campuswear/ProductVisual";
@@ -8,11 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatPeso } from "@/lib/format";
 import { selectedVariantAvailabilityCopy } from "@/lib/productAvailabilityCopy";
-import { addVariantToCart, getPublicCatalogProduct } from "@/lib/supabaseCatalog";
+import { addVariantToCart, cartQueryKey, getPublicCatalogProduct } from "@/lib/supabaseCatalog";
+import { isFavorite } from "@/lib/favorites";
+import { useFavorites } from "@/lib/useFavorites";
+import { recordRecentlyViewed } from "@/lib/recentlyViewed";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronRight, Minus, Plus, ShoppingBag, Store } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { toast } from "sonner";
 
@@ -42,14 +47,39 @@ export default function ProductDetail() {
     queryFn: () => getPublicCatalogProduct(productId!),
     enabled: Boolean(productId),
   });
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const queryClient = useQueryClient();
+  const { favorites, toggle } = useFavorites(user?.id);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
+
+  /*
+    The confirmation reports what was actually added, not what was clicked: the mutation variables
+    are read back in onSuccess, so a size or quantity that changed mid-flight cannot be
+    misreported. It fires only from onSuccess, so a failed add can never look like a success.
+  */
   const addToCart = useMutation({
     mutationFn: addVariantToCart,
-    onSuccess: () => toast.success("Added to your cart."),
+    onSuccess: (_result, variables) => {
+      const added = product.data?.variants.find(variant => variant.id === variables.variantId);
+      const name = product.data?.name ?? "Item";
+      toast.success("Added to cart", {
+        description: `${name}${added?.size ? ` · Size ${added.size}` : ""} · Qty ${variables.quantity}`,
+        action: { label: "View cart", onClick: () => setLocation("/cart") },
+      });
+      // The header badge reads this same cart key, so one invalidation updates both.
+      void queryClient.invalidateQueries({ queryKey: cartQueryKey(user?.id) });
+    },
     onError: error => toast.error(error instanceof Error ? error.message : "We could not update your cart."),
   });
+
+  /*
+    Recorded only once the product genuinely resolved, so a failed or missing product never enters
+    the trail. Ids only — the row re-reads names and prices from the live catalogue.
+  */
+  useEffect(() => {
+    if (product.data?.id) recordRecentlyViewed(user?.id, product.data.id);
+  }, [product.data?.id, user?.id]);
 
   if (product.isLoading) {
     return (
@@ -150,7 +180,15 @@ export default function ProductDetail() {
             <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">
               {productData.categoryName ?? "Campus essential"}
             </p>
-            <h1 className="mt-1.5 text-2xl font-extrabold leading-tight tracking-[-0.03em] sm:text-3xl">{productData.name}</h1>
+            <div className="mt-1.5 flex items-start gap-3">
+              <h1 className="min-w-0 flex-1 text-2xl font-extrabold leading-tight tracking-[-0.03em] sm:text-3xl">{productData.name}</h1>
+              <FavoriteButton
+                productId={productData.id}
+                productName={productData.name}
+                isFavorite={isFavorite(favorites, productData.id)}
+                onToggle={toggle}
+              />
+            </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <p className="text-[28px] font-extrabold leading-none tabular-nums text-primary">{formatPeso(productData.priceInCentavos)}</p>
@@ -176,6 +214,7 @@ export default function ProductDetail() {
                   {sellableSizes} of {productData.variants.length} available
                 </span>
               </div>
+              <div className="mt-3"><SizeGuide sizes={productData.variants.map(variant => variant.size)} schoolName={productData.schoolName} /></div>
               <p className="mt-1 text-xs text-muted-foreground">Sizes that are sold out cannot be selected.</p>
 
               <div className="mt-4 flex flex-wrap gap-2">

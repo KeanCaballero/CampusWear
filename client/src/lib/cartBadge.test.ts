@@ -137,8 +137,10 @@ describe("header layout and styling", () => {
 
   it("shares one badge appearance with the notification bell", () => {
     expect(shell).toContain("const BADGE_CLASS =");
-    // Both badges must reference the shared constant, so they cannot drift apart.
-    expect((shell.match(/className=\{BADGE_CLASS\}/g) ?? [])).toHaveLength(2);
+    // The cart badge applies it directly; the bell's badge now lives in NotificationPopover and
+    // receives the very same constant as a prop. One definition still drives both.
+    expect(shell).toContain("className={BADGE_CLASS}");
+    expect(shell).toContain("badgeClass={BADGE_CLASS}");
   });
 
   it("uses theme tokens, not raw hex", () => {
@@ -151,15 +153,22 @@ describe("header layout and styling", () => {
   it("is positioned so it cannot change the header's height", () => {
     const badgeClass = /const BADGE_CLASS =[\s\S]*?;/.exec(shell)?.[0] ?? "";
     expect(badgeClass).toContain("absolute");
-    // Its anchors must be relatively positioned for that to hold.
-    expect((shell.match(/className=\{`relative grid size-10/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // Its anchors must be relatively positioned for that to hold — the cart link in the shell and
+    // the popover trigger in NotificationPopover.
+    const popover = readFileSync(new URL("../components/campuswear/NotificationPopover.tsx", import.meta.url), "utf8");
+    expect(shell).toMatch(/className=\{`relative grid size-10/);
+    expect(popover).toMatch(/className=\{`relative grid size-10/);
   });
 
   it("keeps a visible focus ring on the cart control", () => {
     expect(shell).toMatch(/href="\/cart"[\s\S]{0,420}focus-visible:ring-2/);
   });
 
-  it("marks the badge decorative because the link is already named", () => {
-    expect((shell.match(/aria-hidden="true"\s*\n\s*className=\{BADGE_CLASS\}/g) ?? [])).toHaveLength(2);
+  it("marks the badge decorative because the control is already named", () => {
+    const popover = readFileSync(new URL("../components/campuswear/NotificationPopover.tsx", import.meta.url), "utf8");
+    // Cart badge in the shell, bell badge in the popover — both aria-hidden, both named by
+    // their parent control. [\s\S] avoids embedding a newline escape in this pattern.
+    expect(shell).toMatch(/aria-hidden="true"[\s\S]{0,40}className=\{BADGE_CLASS\}/);
+    expect(popover).toContain('aria-hidden="true" className={badgeClass}');
   });
 });

@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { vendorAttentionSummary } from "@/lib/vendorAttention";
 import { EmptyPanel } from "@/components/campuswear/EmptyPanel";
 import { OfflinePanel } from "@/components/campuswear/OfflinePanel";
 import { isStalledWithoutData } from "@/lib/queryState";
@@ -120,6 +121,12 @@ export default function VendorDashboard() {
 
   const recentOrders = dashboard.data?.recentOrders ?? [];
   const lowStockItems = dashboard.data?.lowStockItems ?? [];
+  /*
+    Low stock and out of stock stated separately. Both come from the attention split the dashboard
+    query already returns, so there is no extra request and no re-derived threshold.
+  */
+  const stockAttention = dashboard.data?.attention;
+  const stockAttentionSummary = stockAttention ? vendorAttentionSummary(stockAttention) : null;
 
   return (
     <DashboardLayout items={vendorNavigation} primaryAction={vendorPrimaryAction} workspaceLabel="Vendor workspace">
@@ -292,7 +299,9 @@ export default function VendorDashboard() {
                   <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
                     <div>
                       <h2 className="text-lg font-bold tracking-[-0.02em]">Inventory alert</h2>
-                      <p className="mt-0.5 text-xs text-muted-foreground">Sizes at or below their threshold.</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground" aria-live="polite">
+                        {stockAttentionSummary ?? "Every size is above its threshold."}
+                      </p>
                     </div>
                     <Boxes className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   </div>

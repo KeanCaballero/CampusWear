@@ -8,9 +8,11 @@ import { StudentShell } from "@/components/campuswear/StudentShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { formatPeso, formatShortDate } from "@/lib/format";
+import { PickupCode } from "@/components/campuswear/PickupCode";
 import {
   isStoppedOrderStatus,
   showsCompletedAt,
+  showsPickupCode,
   showsPickupDetails,
   studentTerminalExplanation,
   terminalNote,
@@ -99,7 +101,12 @@ function OrderCard({ order }: { order: StudentOrder }) {
             </div>
           </div>
         ) : (
-          <OrderTimeline status={order.status} />
+          <>
+            {showsPickupCode(order.status) && (
+              <div className="mb-5"><PickupCode orderNumber={order.orderNumber} pickupLocation={order.pickupLocation} /></div>
+            )}
+            <OrderTimeline status={order.status} />
+          </>
         )}
 
         {showsCompletedAt(order.status, order.completedAt) && (
