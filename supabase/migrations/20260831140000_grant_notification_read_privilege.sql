@@ -1,0 +1,53 @@
+-- Let a student actually mark their own notification as read.
+--
+-- THE BUG
+-- Clicking "Read" failed with "We could not mark that notification as read." and the notification
+-- stayed unread. The client was not at fault — it already requests a representation and inspects
+-- the affected rows. The failure is one missing GRANT.
+--
+-- public.notifications has an RLS policy that looks completely correct:
+--
+--   "users mark own notifications read"  UPDATE  TO authenticated
+--     USING      (recipient_user_id = auth.uid())
+--     WITH CHECK (recipient_user_id = auth.uid())
+--
+-- but the table's privileges were:
+--
+--   authenticated : SELECT
+--   postgres      : SELECT, INSERT, UPDATE, DELETE, ...
+--   service_role  : SELECT, INSERT, UPDATE, DELETE, ...
+--
+-- An RLS policy does not grant a privilege. It filters the rows a privilege may touch. With no
+-- UPDATE grant, Postgres rejects the statement with 42501 "permission denied for table
+-- notifications" before any policy is consulted, so the policy never gets a chance to allow it.
+-- `has_table_privilege('authenticated','public.notifications','UPDATE')` returned false.
+--
+-- That raw 42501 is a plain PostgREST object rather than a UserFacingError, so the Notifications
+-- page fell through to its generic message — which is exactly what the student saw.
+--
+-- WHY THE TESTS DID NOT CATCH IT
+-- Every notification test mocks the Supabase client, so no test has ever exercised a real GRANT.
+-- The earlier "silent no-op" fix was correct about PostgREST returning 200 with an empty array, and
+-- it remains correct; it simply sat on top of a statement the database was refusing outright.
+--
+-- SCOPE: COLUMN-LEVEL, NOT TABLE-LEVEL
+-- Only read_at is granted. A student marking a notification read has no business rewriting its
+-- title, body, type, recipient, or the order it points at, and a table-wide UPDATE would permit all
+-- of that on their own rows. The RLS policy still decides WHICH rows; this decides WHICH COLUMN.
+-- Both must pass.
+--
+-- NOT INCLUDED, DELIBERATELY
+-- The same policy-without-grant mismatch exists on two other tables:
+--
+--   public.profiles           UPDATE policy "users update own profile",     no grant
+--   public.school_memberships ALL    policy "operators manage memberships", no grant
+--
+-- Neither is reachable today: the client only ever SELECTs from profiles, and nothing references
+-- school_memberships at all. They are latent, not broken, so they are reported rather than bundled
+-- into a fix for a different defect. Grant them when a feature actually needs them, so the
+-- privilege arrives with the code that justifies it.
+
+grant update (read_at) on public.notifications to authenticated;
+
+comment on column public.notifications.read_at is
+  'Timestamp the recipient marked this notification read. The only column authenticated users may update, paired with the "users mark own notifications read" RLS policy which restricts them to their own rows.';

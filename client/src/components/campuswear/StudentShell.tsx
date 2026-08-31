@@ -5,9 +5,21 @@ import { BrandMark } from "./BrandMark";
 import { OfflineNotice } from "./OfflineNotice";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canUseStudentWorkspace, destinationForRole } from "@/lib/authRouting";
+import { cartAriaLabel, cartBadgeCount, cartBadgeText } from "@/lib/cartBadge";
 import { notificationAriaLabel, notificationBadgeText, unreadNotificationCount } from "@/lib/notificationBadge";
-import { listNotifications, notificationsQueryKey } from "@/lib/supabaseCatalog";
+import { cartQueryKey, listCart, listNotifications, notificationsQueryKey } from "@/lib/supabaseCatalog";
 import { useQuery } from "@tanstack/react-query";
+
+/**
+ * One appearance for both header count badges, so the cart and the bell always match.
+ *
+ * Uses existing CampusWear tokens: `bg-destructive` for the alert colour and `border-primary` so the
+ * ring reads against the navy header, both from the theme rather than a literal. `min-w` plus
+ * horizontal padding lets "9+" widen without the badge becoming an ellipse, and because it is
+ * absolutely positioned it cannot change the header's height.
+ */
+const BADGE_CLASS =
+  "absolute -right-0.5 -top-0.5 grid min-w-[1.15rem] place-items-center rounded-full border-2 border-primary bg-destructive px-1 text-[10px] font-extrabold leading-4 tabular-nums text-white";
 
 const mobileItems = [
   { label: "Home", href: "/student", icon: Home },
@@ -42,6 +54,19 @@ export function StudentShell({ children }: { children: ReactNode }) {
   });
   const unreadCount = unreadNotificationCount(notifications.data);
   const unreadBadge = notificationBadgeText(unreadCount);
+
+  /*
+    The same cart the cart page reads — identical query key, identical fetcher — so TanStack serves
+    both from one cache entry. Adding an item, changing a quantity, removing a line and completing
+    checkout all already invalidate this key, so the badge follows without any new plumbing.
+  */
+  const cart = useQuery({
+    queryKey: cartQueryKey(user?.id),
+    queryFn: listCart,
+    enabled: !loading && Boolean(user?.id),
+  });
+  const cartCount = cartBadgeCount(cart.data);
+  const cartBadge = cartBadgeText(cartCount);
 
   useEffect(() => {
     if (requiresAccount && !loading && !user) {
@@ -95,10 +120,19 @@ export function StudentShell({ children }: { children: ReactNode }) {
             <Link
               href="/cart"
               aria-current={isCurrent("/cart") ? "page" : undefined}
-              aria-label="View cart"
-              className={`grid size-10 place-items-center rounded-xl transition-colors ${isCurrent("/cart") ? "bg-white/14 text-white shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"}`}
+              aria-label={cartAriaLabel(cartCount)}
+              className={`relative grid size-10 place-items-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-gold ${isCurrent("/cart") ? "bg-white/14 text-white shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"}`}
             >
               <ShoppingBag className="size-4.5" aria-hidden="true" />
+              {/* Decorative: the count is already in the link's accessible name above. */}
+              {cartBadge && (
+                <span
+                  aria-hidden="true"
+                  className={BADGE_CLASS}
+                >
+                  {cartBadge}
+                </span>
+              )}
             </Link>
             <Link
               href="/notifications"
@@ -114,7 +148,7 @@ export function StudentShell({ children }: { children: ReactNode }) {
               {unreadBadge && (
                 <span
                   aria-hidden="true"
-                  className="absolute -right-0.5 -top-0.5 grid min-w-[1.15rem] place-items-center rounded-full border-2 border-primary bg-destructive px-1 text-[10px] font-extrabold leading-4 tabular-nums text-white"
+                  className={BADGE_CLASS}
                 >
                   {unreadBadge}
                 </span>

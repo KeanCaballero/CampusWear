@@ -20,7 +20,10 @@ describe("student shell navigation markup", () => {
   it("uses the official high-contrast campus header without changing its accessible utility controls", () => {
     expect(source).toContain("bg-primary text-white");
     expect(source).toContain("<BrandMark light />");
-    expect(source).toContain('aria-label="View cart"');
+    // The cart's accessible name now carries the item count, so it is built rather than literal —
+    // the same change the bell already went through. The guarantee is unchanged: the control still
+    // has a name, and it does not depend on the badge being visible.
+    expect(source).toContain("aria-label={cartAriaLabel(cartCount)}");
     // The bell's accessible name now carries the unread count, so it is built rather than literal.
     // The guarantee is unchanged: the control still has a name that does not depend on the badge.
     expect(source).toContain("aria-label={notificationAriaLabel(unreadCount)}");
