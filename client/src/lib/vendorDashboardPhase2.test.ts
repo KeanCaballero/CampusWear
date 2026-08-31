@@ -61,9 +61,14 @@ describe("recent orders surface data the model already returns", () => {
   });
 
   it("keeps every existing order column and its data source", () => {
-    for (const field of ["order.orderNumber", "order.pickupLocation", "order.placedAt", "order.status", "order.pickupStatus", "order.totalInCentavos"]) {
+    // order.pickupStatus is deliberately absent. It is written only by transition_order_status as a
+    // function of the order status ('ready' at ready_for_pickup, 'picked_up' at completed, the
+    // 'scheduled' column default otherwise), so a second badge could only restate order.status or,
+    // on a pending or cancelled order, contradict it.
+    for (const field of ["order.orderNumber", "order.pickupLocation", "order.placedAt", "order.status", "order.totalInCentavos"]) {
       expect(dashboard).toContain(field);
     }
+    expect(dashboard).not.toContain("order.pickupStatus");
   });
 });
 

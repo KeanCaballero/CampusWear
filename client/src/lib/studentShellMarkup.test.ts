@@ -21,6 +21,8 @@ describe("student shell navigation markup", () => {
     expect(source).toContain("bg-primary text-white");
     expect(source).toContain("<BrandMark light />");
     expect(source).toContain('aria-label="View cart"');
-    expect(source).toContain('aria-label="View notifications"');
+    // The bell's accessible name now carries the unread count, so it is built rather than literal.
+    // The guarantee is unchanged: the control still has a name that does not depend on the badge.
+    expect(source).toContain("aria-label={notificationAriaLabel(unreadCount)}");
   });
 });

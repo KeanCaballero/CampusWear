@@ -253,7 +253,6 @@ export default function VendorDashboard() {
                                 <td className="px-5 py-3.5">
                                   <div className="flex flex-wrap gap-1.5">
                                     <StatusBadge kind="order" value={order.status} />
-                                    <StatusBadge kind="pickup" value={order.pickupStatus} />
                                   </div>
                                 </td>
                                 <td className="whitespace-nowrap px-5 py-3.5 text-right text-sm font-bold tabular-nums">{formatPeso(order.totalInCentavos)}</td>
@@ -277,7 +276,6 @@ export default function VendorDashboard() {
                             <p className="mt-1 text-xs text-muted-foreground">{formatShortDate(order.placedAt)}</p>
                             <div className="mt-2.5 flex flex-wrap gap-2">
                               <StatusBadge kind="order" value={order.status} />
-                              <StatusBadge kind="pickup" value={order.pickupStatus} />
                             </div>
                           </li>
                         ))}

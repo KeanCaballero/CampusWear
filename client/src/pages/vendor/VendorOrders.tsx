@@ -11,7 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatPeso, formatShortDate } from "@/lib/format";
-import { filterVendorOrders, searchVendorOrders, vendorOrderFilterOptions, type VendorOrderFilter } from "@/lib/vendorOrderFilters";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { terminalNote } from "@/lib/orderPresentation";
+import { countVendorOrdersByFilter, filterVendorOrders, searchVendorOrders, vendorOrderFilterOptions, type VendorOrderFilter } from "@/lib/vendorOrderFilters";
 import { listVendorOrders, transitionVendorOrder, VendorFacingError, vendorNextStatuses, vendorOrdersQueryKey, type VendorOrder } from "@/lib/supabaseCatalog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,10 +31,49 @@ const statusStateLabels: Record<VendorOrder["status"], string> = { pending: "Pen
 /** What moving TO a status DOES. Used for transition options. Vocabulary unchanged. */
 const statusActionLabels: Record<VendorOrder["status"], string> = { pending: "Pending", confirmed: "Confirm", preparing: "Preparing", ready_for_pickup: "Ready for pickup", completed: "Complete", cancelled: "Cancel", rejected: "Reject" };
 
+/** Terminal outcomes that end the order. Confirmed before they are sent. */
+const DESTRUCTIVE_TRANSITIONS: ReadonlyArray<VendorOrder["status"]> = ["cancelled", "rejected"];
+
 export function VendorOrderTransitionControl({ status, isPending, onStatusChange }: { status: VendorOrder["status"]; isPending: boolean; onStatusChange: (status: VendorOrder["status"]) => void }) {
   const nextStatuses = vendorNextStatuses[status];
-  if (!nextStatuses.length) return <span role="status" className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-border bg-muted px-3 text-xs font-bold text-muted-foreground"><CircleCheck className="size-3.5" aria-hidden="true" />Finalized — no further updates</span>;
-  return <Select onValueChange={value => onStatusChange(value as VendorOrder["status"])} disabled={isPending}><SelectTrigger aria-label={`Update order status from ${statusStateLabels[status]}`} className="min-h-11 w-44 bg-card"><SelectValue placeholder="Update status" /></SelectTrigger><SelectContent>{nextStatuses.map(nextStatus => <SelectItem key={nextStatus} value={nextStatus}>{statusActionLabels[nextStatus]}</SelectItem>)}</SelectContent></Select>;
+  const [pendingChoice, setPendingChoice] = useState<VendorOrder["status"] | null>(null);
+  const onSelect = (next: VendorOrder["status"]) => {
+    if (DESTRUCTIVE_TRANSITIONS.includes(next)) setPendingChoice(next);
+    else onStatusChange(next);
+  };
+  // Terminal orders differ in meaning: "Finalized" read the same for a completed pickup and a
+  // cancelled one. terminalNote names the actual outcome. It promises nothing beyond that — no
+  // refund, no appeal — because the schema records neither.
+  if (!nextStatuses.length) return <span role="status" className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-border bg-muted px-3 text-xs font-bold text-muted-foreground"><CircleCheck className="size-3.5" aria-hidden="true" />{terminalNote(status)}</span>;
+  return <><Select value="" onValueChange={value => onSelect(value as VendorOrder["status"])} disabled={isPending}><SelectTrigger aria-label={`Update order status from ${statusStateLabels[status]}`} className="min-h-11 w-44 bg-card"><SelectValue placeholder="Update status" /></SelectTrigger><SelectContent>{nextStatuses.map(nextStatus => <SelectItem key={nextStatus} value={nextStatus}>{statusActionLabels[nextStatus]}</SelectItem>)}</SelectContent></Select>
+
+    {/*
+      Cancelling and rejecting are terminal: the RPC allows no transition out of them, and the
+      student is notified immediately. A single mis-click in the dropdown ended an order with no
+      way back, so those two are confirmed first. Ordinary forward steps are not — confirming a
+      harmless transition just trains people to dismiss dialogs.
+    */}
+    <AlertDialog open={pendingChoice !== null} onOpenChange={open => { if (!open) setPendingChoice(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{pendingChoice === "rejected" ? "Reject this order?" : "Cancel this order?"}</AlertDialogTitle>
+          <AlertDialogDescription>
+            This cannot be undone — {pendingChoice === "rejected" ? "a rejected" : "a cancelled"} order cannot be moved
+            to any other status, and the student is notified straight away.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep this order</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => { if (pendingChoice) onStatusChange(pendingChoice); setPendingChoice(null); }}
+            className="bg-destructive text-white hover:bg-destructive/90"
+          >
+            {pendingChoice === "rejected" ? "Reject order" : "Cancel order"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>;
 }
 
 export default function VendorOrders() {
@@ -53,7 +94,11 @@ export default function VendorOrders() {
     [allOrders, filter, search],
   );
 
+  // Counts come from the array already loaded and respect the search term, so each badge matches
+  // exactly what clicking that filter will show. No extra request.
+  const filterCounts = useMemo(() => countVendorOrdersByFilter(allOrders, search), [allOrders, search]);
+
   const clearFilters = () => { setSearch(""); setFilter("all"); };
   const filterLabel = vendorOrderFilterOptions.find(option => option.value === filter)?.label.toLowerCase() ?? "selected";
-  return <DashboardLayout items={vendorNavigation} primaryAction={vendorPrimaryAction} workspaceLabel="Vendor workspace"><WorkspaceGate allowedRoles={["vendor_staff", "platform_admin", "admin"]}><WorkspacePage eyebrow="FULFILLMENT" title="Orders" description="Review each item, then move valid requests through the controlled pickup lifecycle.">{orders.isLoading ? <div className="mt-7 space-y-3">{Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-[var(--radius)]" />)}</div> : isStalledWithoutData(orders) ? <div className="mt-7"><OfflinePanel title="You are offline" detail="Reconnect to load your fulfillment queue." onRetry={() => orders.refetch()} /></div> : orders.isError ? <div className="mt-7"><EmptyPanel title="Orders could not be loaded" detail="Please try again to review your vendor queue." action={{ label: "Try again", onClick: () => orders.refetch() }} /></div> : orders.data?.length ? <><WorkspacePanel padding="default" className="mt-7"><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><label className="sr-only" htmlFor="vendor-order-search">Search orders</label><Input id="vendor-order-search" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by order number, product, or size" className="min-h-11 bg-card pl-9" /></div><div className="mt-3 flex flex-wrap gap-2" aria-label="Filter orders by status">{vendorOrderFilterOptions.map(option => <Button key={option.value} size="sm" variant={filter === option.value ? "default" : "outline"} onClick={() => setFilter(option.value)} className={filter === option.value ? "" : "bg-card"}>{option.label}</Button>)}</div><p className="mt-3 text-sm font-semibold text-muted-foreground" aria-live="polite">{visibleOrders.length} {filterLabel} order{visibleOrders.length === 1 ? "" : "s"}{filtersActive ? ` of ${allOrders.length}` : ""}</p></WorkspacePanel>{visibleOrders.length ? <div className="mt-3 space-y-3">{visibleOrders.map(order => <WorkspacePanel as="article" key={order.id} padding="comfortable"><div className="flex flex-col gap-4 lg:flex-row lg:items-center"><div className="min-w-0 flex-1"><p className="text-xs font-bold tracking-[0.08em] text-muted-foreground">{order.orderNumber}</p><h2 className="mt-1 text-lg font-extrabold">Pickup at {order.pickupLocation}</h2><p className="mt-1 text-sm text-muted-foreground">Placed {formatShortDate(order.placedAt)} · <span className="tabular-nums">{formatPeso(order.totalInCentavos)}</span>{order.completedAt ? <> · Completed {formatShortDate(order.completedAt)}</> : null}</p><div className="mt-4 flex flex-wrap gap-2">{order.items.map(item => <span key={`${item.productName}-${item.size}`} className="rounded-lg bg-secondary px-2.5 py-1.5 text-xs font-bold text-secondary-foreground">{item.quantity}× {item.productName} · {item.size}</span>)}</div></div><div className="flex flex-wrap items-center gap-2"><StatusBadge kind="order" value={order.status} /><StatusBadge kind="pickup" value={order.pickupStatus} /><VendorOrderTransitionControl status={order.status} isPending={update.isPending && update.variables?.orderId === order.id} onStatusChange={status => update.mutate({ orderId: order.id, status })} /></div></div></WorkspacePanel>)}</div> : <div className="mt-5"><EmptyPanel title="No orders match your filters" detail="No order in your queue matches the current search or status filter." action={{ label: "Clear filters", onClick: clearFilters }} /></div>}</> : <div className="mt-7"><EmptyPanel title="No orders need attention" detail="Incoming student order requests will appear in this workspace." /></div>}</WorkspacePage></WorkspaceGate></DashboardLayout>;
+  return <DashboardLayout items={vendorNavigation} primaryAction={vendorPrimaryAction} workspaceLabel="Vendor workspace"><WorkspaceGate allowedRoles={["vendor_staff", "platform_admin", "admin"]}><WorkspacePage eyebrow="FULFILLMENT" title="Orders" description="Review each item, then move valid requests through the controlled pickup lifecycle.">{orders.isLoading ? <div className="mt-7 space-y-3">{Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-[var(--radius)]" />)}</div> : isStalledWithoutData(orders) ? <div className="mt-7"><OfflinePanel title="You are offline" detail="Reconnect to load your fulfillment queue." onRetry={() => orders.refetch()} /></div> : orders.isError ? <div className="mt-7"><EmptyPanel title="Orders could not be loaded" detail="Please try again to review your vendor queue." action={{ label: "Try again", onClick: () => orders.refetch() }} /></div> : orders.data?.length ? <><WorkspacePanel padding="default" className="mt-7"><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><label className="sr-only" htmlFor="vendor-order-search">Search orders</label><Input id="vendor-order-search" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by order number, product, or size" className="min-h-11 bg-card pl-9" /></div><div className="mt-3 flex flex-wrap gap-2" aria-label="Filter orders by status">{vendorOrderFilterOptions.map(option => <Button key={option.value} size="sm" variant={filter === option.value ? "default" : "outline"} aria-pressed={filter === option.value} aria-label={`${option.label}, ${filterCounts[option.value]} order${filterCounts[option.value] === 1 ? "" : "s"}`} onClick={() => setFilter(option.value)} className={`min-h-11 ${filter === option.value ? "" : "bg-card"}`}>{option.label} <span aria-hidden="true" className="ml-1.5 tabular-nums opacity-70">{filterCounts[option.value]}</span></Button>)}</div><p className="mt-3 text-sm font-semibold text-muted-foreground" aria-live="polite">{visibleOrders.length} {filterLabel} order{visibleOrders.length === 1 ? "" : "s"}{filtersActive ? ` of ${allOrders.length}` : ""}</p></WorkspacePanel>{visibleOrders.length ? <div className="mt-3 space-y-3">{visibleOrders.map(order => <WorkspacePanel as="article" key={order.id} padding="comfortable"><div className="flex flex-col gap-4 lg:flex-row lg:items-center"><div className="min-w-0 flex-1"><p className="text-xs font-bold tracking-[0.08em] text-muted-foreground">{order.orderNumber}</p><h2 className="mt-1 text-lg font-extrabold">Pickup at {order.pickupLocation}</h2><p className="mt-1 text-sm text-muted-foreground">Placed {formatShortDate(order.placedAt)} · <span className="tabular-nums">{formatPeso(order.totalInCentavos)}</span>{order.completedAt ? <> · Completed {formatShortDate(order.completedAt)}</> : null}</p><div className="mt-4 flex flex-wrap gap-2">{order.items.map(item => <span key={`${item.productName}-${item.size}`} className="rounded-lg bg-secondary px-2.5 py-1.5 text-xs font-bold text-secondary-foreground">{item.quantity}× {item.productName} · {item.size}</span>)}</div></div><div className="flex flex-wrap items-center gap-2"><StatusBadge kind="order" value={order.status} /><VendorOrderTransitionControl status={order.status} isPending={update.isPending && update.variables?.orderId === order.id} onStatusChange={status => update.mutate({ orderId: order.id, status })} /></div></div></WorkspacePanel>)}</div> : <div className="mt-5"><EmptyPanel title="No orders match your filters" detail="No order in your queue matches the current search or status filter." action={{ label: "Clear filters", onClick: clearFilters }} /></div>}</> : <div className="mt-7"><EmptyPanel title="No orders need attention" detail="Incoming student order requests will appear in this workspace." /></div>}</WorkspacePage></WorkspaceGate></DashboardLayout>;
 }

@@ -12,8 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { formatPeso } from "@/lib/format";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   cartItemCount,
+  cartPickupLocationsQueryKey,
   cartQueryKey,
   cartStoreNames,
   cartTotalInCentavos,
@@ -21,6 +23,7 @@ import {
   CheckoutStockConflictError,
   groupCartByStore,
   listCart,
+  listPickupLocationsForStores,
   orderableCartLines,
   updateCartItem,
   UserFacingError,
@@ -72,6 +75,18 @@ export default function Cart() {
   // own when the network drops — observed in production with the checkout button still enabled.
   const isOffline = useIsOffline();
   const isFrozen = isWriteBlocked(cart, isOffline);
+
+  /*
+    The stores' own declared collection points. One small query, keyed by the store names already
+    derived from the cart, so it is cached and shared rather than refetched per render. A failure
+    here must never block checkout: the UI falls back to the free-text field it has always had.
+  */
+  const pickupLocations = useQuery({
+    queryKey: cartPickupLocationsQueryKey(storeNames),
+    queryFn: () => listPickupLocationsForStores(storeNames),
+    enabled: storeNames.length > 0,
+  });
+  const pickupOptions = Array.from(new Set((pickupLocations.data ?? []).map(entry => entry.pickupLocation)));
 
   const update = useMutation({
     mutationFn: updateCartItem,
@@ -173,7 +188,21 @@ export default function Cart() {
   }
 
   const reviewing = phase === "checkout";
-  const blocksCheckout = isFrozen || !orderable.length;
+  /*
+    Lines the catalogue already reports as out of stock. `get_public_catalog` derives availability
+    from `inventory.quantity <= 0`, so this is the store's real position — not a guess.
+
+    These used to count toward the total and reach checkout, where create_order_from_cart locked the
+    rows and raised "Insufficient stock". The student was told about a problem the page already knew
+    about, one item at a time, after committing. Blocking here surfaces it up front.
+
+    Note the deliberate limit: `low_stock` is NOT blocked. The catalogue exposes an availability
+    LABEL, never a number, so there is no way to know whether a low-stock line has enough for the
+    requested quantity. Claiming "only N left" would require inventing N. The database stays
+    authoritative for that case and its typed stock conflict still handles it.
+  */
+  const soldOut = orderable.filter(line => line.availability === "out_of_stock");
+  const blocksCheckout = isFrozen || !orderable.length || soldOut.length > 0;
 
   return (
     <StudentShell>
@@ -247,6 +276,28 @@ export default function Cart() {
           </div>
         )}
 
+        {Boolean(soldOut.length) && (
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4" role="alert">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-extrabold text-destructive">
+                {soldOut.length === 1 ? "One item is out of stock" : `${soldOut.length} items are out of stock`}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-destructive/90">
+                The store has none of {soldOut.length === 1 ? "this size" : "these sizes"} left, so this order cannot be
+                placed yet. Remove {soldOut.length === 1 ? "it" : "them"} to continue — the rest of your cart is fine.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {soldOut.map(line => (
+                  <li key={line.variantId} className="text-xs font-semibold text-destructive">
+                    {line.productName}{line.size ? ` · size ${line.size}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {Boolean(unavailable.length) && (
           <div className="mt-5 flex items-start gap-3 rounded-xl border border-border bg-muted/50 p-4" role="status">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -303,7 +354,7 @@ export default function Cart() {
               </div>
               <div className="flex justify-between gap-4 py-1.5 text-sm">
                 <dt className="font-semibold text-muted-foreground">Campus pickup</dt>
-                <dd className="font-bold">Free</dd>
+                <dd className="font-bold">No delivery fee</dd>
               </div>
               <div className="mt-3 flex items-baseline justify-between gap-4 border-t border-border pt-4">
                 <dt className="text-[15px] font-extrabold">Total</dt>
@@ -313,24 +364,53 @@ export default function Cart() {
 
             {reviewing ? (
               <form className="mt-5" onSubmit={form.handleSubmit(values => checkout.mutate(values))} noValidate>
-                <PickupPlaque storeNames={storeNames} compact />
+                <PickupPlaque storeNames={storeNames} locations={pickupLocations.data ?? []} compact />
 
                 <div className="mt-4">
                   <label className="block text-sm font-extrabold" htmlFor="pickupLocation">
-                    Where would you like to collect this?
+                    Which counter will you collect from?
                   </label>
                   <p id="pickup-location-help" className="mt-1 text-xs leading-5 text-muted-foreground">
-                    The store confirms the final pickup point after they accept your request.
+                    {pickupOptions.length
+                      ? "These are the collection points your stores use. The store confirms when your order is ready to collect."
+                      : "Name the campus point you plan to collect from. The store confirms when your order is ready."}
                   </p>
-                  <Input
-                    id="pickupLocation"
-                    className="mt-2.5 min-h-11 bg-card"
-                    placeholder="e.g. Student Center counter"
-                    autoComplete="street-address"
-                    aria-describedby="pickup-location-help"
-                    aria-invalid={form.formState.errors.pickupLocation ? true : undefined}
-                    {...form.register("pickupLocation")}
-                  />
+
+                  {/*
+                    A controlled choice whenever the stores have declared real pickup points, so the
+                    student picks a place that exists instead of typing one. When none can be
+                    resolved the original free-text field is kept — inventing options would be worse
+                    than asking.
+                  */}
+                  {pickupOptions.length ? (
+                    <Select
+                      value={form.watch("pickupLocation") || undefined}
+                      onValueChange={value => form.setValue("pickupLocation", value, { shouldValidate: true })}
+                    >
+                      <SelectTrigger
+                        id="pickupLocation"
+                        className="mt-2.5 min-h-11 bg-card"
+                        aria-describedby="pickup-location-help"
+                        aria-invalid={form.formState.errors.pickupLocation ? true : undefined}
+                      >
+                        <SelectValue placeholder="Choose a collection point" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pickupOptions.map(option => (
+                          <SelectItem key={option} value={option}>{option}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="pickupLocation"
+                      className="mt-2.5 min-h-11 bg-card"
+                      placeholder="e.g. Student Center counter"
+                      aria-describedby="pickup-location-help"
+                      aria-invalid={form.formState.errors.pickupLocation ? true : undefined}
+                      {...form.register("pickupLocation")}
+                    />
+                  )}
                   <p className="mt-1.5 min-h-5 text-xs font-semibold text-destructive" role="alert">
                     {form.formState.errors.pickupLocation?.message}
                   </p>
@@ -360,7 +440,7 @@ export default function Cart() {
               </form>
             ) : (
               <div className="mt-5">
-                <PickupPlaque storeNames={storeNames} compact />
+                <PickupPlaque storeNames={storeNames} locations={pickupLocations.data ?? []} compact />
 
                 <Button onClick={goToCheckout} disabled={blocksCheckout} className="mt-4 min-h-12 w-full gap-2">
                   Proceed to checkout
@@ -370,11 +450,15 @@ export default function Cart() {
                   <Link href="/shop">Continue shopping</Link>
                 </Button>
 
-                {!orderable.length && (
+                {!orderable.length ? (
                   <p className="mt-3 text-xs leading-5 text-muted-foreground">
                     Remove the unavailable {unavailable.length === 1 ? "item" : "items"} above to continue.
                   </p>
-                )}
+                ) : soldOut.length ? (
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Remove the out-of-stock {soldOut.length === 1 ? "item" : "items"} above to continue.
+                  </p>
+                ) : null}
 
                 <p className="mt-4 text-[11px] leading-5 text-muted-foreground">
                   No online payment. You pay the store when you collect your order.
