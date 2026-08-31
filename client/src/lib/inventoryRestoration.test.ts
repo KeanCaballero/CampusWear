@@ -24,11 +24,14 @@ const migration = readFileSync(new URL(FILENAME, MIGRATIONS_DIR), "utf8");
 const sql = migration.replace(/^\s*--.*$/gm, "");
 
 describe("the migration is append-only and does not rewrite history", () => {
-  it("is a new file, and no earlier migration was edited", () => {
+  it("is a new file that sorts after every migration it was written against", () => {
     const files = readdirSync(MIGRATIONS_DIR).filter(name => name.endsWith(".sql")).sort();
     expect(files).toContain(FILENAME);
-    // It must sort last, so the ledger stays chronological.
-    expect(files[files.length - 1]).toBe(FILENAME);
+    // Append-only ordering: it must come after the migration that preceded it. Deliberately not
+    // "sorts last" — that would break the moment any later migration is added, which says nothing
+    // about whether THIS one was appended correctly.
+    const predecessor = "20260830120000_fix_platform_team_members_email_type.sql";
+    expect(files.indexOf(FILENAME)).toBeGreaterThan(files.indexOf(predecessor));
   });
 
   it("replaces the function rather than dropping it", () => {
