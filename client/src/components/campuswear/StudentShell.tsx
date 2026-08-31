@@ -1,4 +1,4 @@
-import { Bell, Home, Megaphone, PackageSearch, ShoppingBag, UserRound } from "lucide-react";
+import { Heart, Home, Megaphone, PackageSearch, ShoppingBag, UserRound } from "lucide-react";
 import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { BrandMark } from "./BrandMark";
@@ -6,7 +6,8 @@ import { OfflineNotice } from "./OfflineNotice";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canUseStudentWorkspace, destinationForRole } from "@/lib/authRouting";
 import { cartAriaLabel, cartBadgeCount, cartBadgeText } from "@/lib/cartBadge";
-import { notificationAriaLabel, notificationBadgeText, unreadNotificationCount } from "@/lib/notificationBadge";
+import { NotificationPopover } from "./NotificationPopover";
+import { notificationBadgeText, unreadNotificationCount } from "@/lib/notificationBadge";
 import { cartQueryKey, listCart, listNotifications, notificationsQueryKey } from "@/lib/supabaseCatalog";
 import { useQuery } from "@tanstack/react-query";
 
@@ -38,7 +39,7 @@ const desktopItems = [
 export function StudentShell({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { user, loading } = useAuth();
-  const requiresAccount = ["/cart", "/orders", "/notifications", "/profile"].includes(location);
+  const requiresAccount = ["/cart", "/orders", "/notifications", "/profile", "/favorites"].includes(location);
   const mustLeaveStudentWorkspace = Boolean(user && !canUseStudentWorkspace(user.role));
   const isCurrent = (href: string) => location === href;
 
@@ -116,7 +117,22 @@ export function StudentShell({ children }: { children: ReactNode }) {
             })}
           </nav>
 
-          <div className="flex items-center gap-1">
+          {/*
+              40px controls with 4px gaps, below the 44x44 / 8px ideal, and measured rather than
+              assumed. Raising them to 44px overflows the header by 7px at 375 and 13px at 768;
+              adding 8px gaps costs a further 25px at 768. Horizontal scroll is the worse failure,
+              and 40px still clears the WCAG 2.5.8 minimum of 24px. Reaching 44px needs the brand
+              lockup or the desktop nav to give up width, which is a navigation change.
+            */}
+            <div className="flex items-center gap-1">
+            <Link
+              href="/favorites"
+              aria-current={isCurrent("/favorites") ? "page" : undefined}
+              aria-label="Saved items"
+              className={`grid size-10 place-items-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-gold ${isCurrent("/favorites") ? "bg-white/14 text-white shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"}`}
+            >
+              <Heart className="size-4.5" aria-hidden="true" />
+            </Link>
             <Link
               href="/cart"
               aria-current={isCurrent("/cart") ? "page" : undefined}
@@ -134,26 +150,18 @@ export function StudentShell({ children }: { children: ReactNode }) {
                 </span>
               )}
             </Link>
-            <Link
-              href="/notifications"
-              aria-current={isCurrent("/notifications") ? "page" : undefined}
-              aria-label={notificationAriaLabel(unreadCount)}
-              className={`relative grid size-10 place-items-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-gold ${isCurrent("/notifications") ? "bg-white/14 text-white shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"}`}
-            >
-              <Bell className="size-4.5" aria-hidden="true" />
-              {/*
-                Decorative: the count is already in the link's accessible name, so a screen reader
-                is not told the number twice and the red dot is never the only signal.
-              */}
-              {unreadBadge && (
-                <span
-                  aria-hidden="true"
-                  className={BADGE_CLASS}
-                >
-                  {unreadBadge}
-                </span>
-              )}
-            </Link>
+            {/*
+              The popover renders the notifications the shell already fetched, so opening it costs no
+              request and cannot disagree with its own badge. It never marks anything read — that
+              stays an explicit action on the Notifications page.
+            */}
+            <NotificationPopover
+              notifications={notifications.data}
+              unreadCount={unreadCount}
+              badge={unreadBadge}
+              badgeClass={BADGE_CLASS}
+              isCurrent={isCurrent("/notifications")}
+            />
             <Link
               href="/profile"
               aria-current={isCurrent("/profile") ? "page" : undefined}

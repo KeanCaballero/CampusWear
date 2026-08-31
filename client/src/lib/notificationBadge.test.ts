@@ -104,8 +104,12 @@ describe("the shell wires the badge to the existing notification data", () => {
   });
 
   it("puts the count in the accessible name and marks the badge decorative", () => {
-    expect(shell).toContain("aria-label={notificationAriaLabel(unreadCount)}");
-    expect(shell).toMatch(/unreadBadge && \(\s*<span\s*\n\s*aria-hidden="true"/);
+    // The bell moved into NotificationPopover. The shell still owns the count and hands it in;
+    // the popover owns the trigger markup. Both halves are asserted so neither can regress.
+    const popover = readFileSync(new URL("../components/campuswear/NotificationPopover.tsx", import.meta.url), "utf8");
+    expect(shell).toContain("unreadCount={unreadCount}");
+    expect(popover).toContain("aria-label={notificationAriaLabel(unreadCount)}");
+    expect(popover).toContain('{badge && <span aria-hidden="true" className={badgeClass}>');
   });
 
   it("gives the bell a visible focus state", () => {

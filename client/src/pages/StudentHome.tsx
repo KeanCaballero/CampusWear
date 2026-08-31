@@ -4,6 +4,10 @@ import { isStalledWithoutData } from "@/lib/queryState";
 import { ProductVisual } from "@/components/campuswear/ProductVisual";
 import { StatusBadge } from "@/components/campuswear/StatusBadge";
 import { StudentShell } from "@/components/campuswear/StudentShell";
+import { HowItWorks } from "@/components/campuswear/HowItWorks";
+import { ProductRow } from "@/components/campuswear/ProductRow";
+import { readRecentlyViewed } from "@/lib/recentlyViewed";
+import { useFavorites } from "@/lib/useFavorites";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,6 +39,14 @@ export default function StudentHome() {
   const catalogOffline = isStalledWithoutData(catalog);
   const noticesOffline = isStalledWithoutData(notices);
   const firstName = user?.name?.trim().split(/\s+/)[0];
+  /*
+    The school name comes from the catalogue rows themselves (products join schools), so it is the
+    real record rather than a hard-coded string. If the catalogue has not loaded, nothing is shown
+    — an invented campus name would be worse than none.
+  */
+  const schoolName = catalog.data?.[0]?.schoolName ?? null;
+  const { favorites, toggle } = useFavorites(user?.id);
+  const recentIds = readRecentlyViewed(user?.id);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -53,7 +65,11 @@ export default function StudentHome() {
             <div>
               <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-campus-gold">
                 <GraduationCap className="size-4" aria-hidden="true" />
-                Student workspace
+                {/*
+                  The real school record from the catalogue, never a hard-coded campus. Falls back to the
+                  generic label rather than naming a university that has not loaded.
+                */}
+                {schoolName ? `${schoolName} · CampusWear` : "Student workspace"}
               </p>
               <h1 className="mt-3 max-w-xl text-3xl font-extrabold leading-[1.12] tracking-[-0.035em] sm:text-4xl lg:max-w-2xl xl:text-5xl">
                 {firstName ? `Welcome back, ${firstName}.` : "Your campus store, before the trip."}
@@ -201,6 +217,21 @@ export default function StudentHome() {
             <Link href="/shop">Browse the catalog <ArrowRight className="size-4" aria-hidden="true" /></Link>
           </Button>
         </section>
+
+        {recentIds.length > 0 && (
+          <section className="mt-10" aria-labelledby="recently-viewed-heading">
+            <h2 id="recently-viewed-heading" className="text-lg font-extrabold tracking-[-0.03em]">Recently viewed</h2>
+            <ProductRow
+              ids={recentIds}
+              catalog={catalog.data}
+              favorites={favorites}
+              onToggleFavorite={toggle}
+              emptyMessage="The items you viewed are no longer in the catalog."
+            />
+          </section>
+        )}
+
+        <HowItWorks className="mt-10" />
 
         <section className="mt-10 pb-4" aria-label="Campus updates">
           <div className="flex items-end justify-between gap-4">
