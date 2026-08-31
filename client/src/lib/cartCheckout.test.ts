@@ -13,12 +13,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //      Silently hiding it makes items disappear with no explanation.
 const harness = vi.hoisted(() => {
   const scenario = {
-    cartRow: { id: "cart-1" } as { id: string } | null,
+    /**
+     * The carts this student holds. `carts` is UNIQUE (student_id, school_id), so this is a LIST —
+     * one entry per school — and PostgREST returns it as an array. Two entries is the real
+     * multi-school case, and an empty array is "no cart yet".
+     */
+    cartIds: ["cart-1"] as string[],
     cartItems: [] as Array<{ variant_id: string; quantity: number }>,
     catalogRows: [] as any[],
     catalogError: null as { message: string } | null,
-    writes: [] as Array<{ op: string; payload?: unknown; variantId?: string }>,
+    writes: [] as Array<{ op: string; payload?: unknown; variantId?: string; cartIds?: unknown }>,
     writeError: null as { message: string } | null,
+    /** false models an RLS-filtered write: PostgREST answers 200 with zero rows. */
+    writeMatchesRow: true,
     rpcCalls: [] as Array<{ name: string; args: unknown }>,
     checkoutRows: [] as any[],
     checkoutError: null as { message: string; code?: string } | null,
@@ -29,6 +36,10 @@ const harness = vi.hoisted(() => {
       select: () => builder,
       eq: (column: string, value: unknown) => {
         if (column === "variant_id") builder.__variantId = value;
+        return builder;
+      },
+      in: (column: string, values: unknown) => {
+        if (column === "cart_id") builder.__cartIds = values;
         return builder;
       },
       order: () => builder,
@@ -42,20 +53,20 @@ const harness = vi.hoisted(() => {
   const client = {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: "student-1" } }, error: null }) },
     from: (table: string) => {
-      if (table === "carts") return thenable(() => ({ data: scenario.cartRow, error: null }));
+      if (table === "carts") return thenable(() => ({ data: scenario.cartIds.map(id => ({ id })), error: null }));
       if (table === "cart_items") {
         const builder: any = thenable(() => ({ data: scenario.cartItems, error: null }));
         builder.delete = () => {
           const b = thenable(() => {
-            scenario.writes.push({ op: "delete", variantId: b.__variantId });
-            return { data: null, error: scenario.writeError };
+            scenario.writes.push({ op: "delete", variantId: b.__variantId, cartIds: b.__cartIds });
+            return { data: scenario.writeMatchesRow ? [{ variant_id: b.__variantId }] : [], error: scenario.writeError };
           });
           return b;
         };
         builder.update = (payload: unknown) => {
           const b = thenable(() => {
-            scenario.writes.push({ op: "update", payload, variantId: b.__variantId });
-            return { data: null, error: scenario.writeError };
+            scenario.writes.push({ op: "update", payload, variantId: b.__variantId, cartIds: b.__cartIds });
+            return { data: scenario.writeMatchesRow ? [{ variant_id: b.__variantId }] : [], error: scenario.writeError };
           });
           return b;
         };
@@ -116,12 +127,13 @@ async function capture(promise: Promise<unknown>): Promise<Error> {
 }
 
 beforeEach(() => {
-  harness.scenario.cartRow = { id: "cart-1" };
+  harness.scenario.cartIds = ["cart-1"];
   harness.scenario.cartItems = [];
   harness.scenario.catalogRows = [];
   harness.scenario.catalogError = null;
   harness.scenario.writes = [];
   harness.scenario.writeError = null;
+  harness.scenario.writeMatchesRow = true;
   harness.scenario.rpcCalls = [];
   harness.scenario.checkoutRows = [];
   harness.scenario.checkoutError = null;
@@ -134,7 +146,7 @@ describe("listCart", () => {
   });
 
   it("returns an empty list when the student has no cart at all", async () => {
-    harness.scenario.cartRow = null;
+    harness.scenario.cartIds = [];
     await expect(listCart()).resolves.toEqual([]);
   });
 
@@ -224,7 +236,8 @@ describe("totals never count what cannot be ordered", () => {
 describe("updateCartItem", () => {
   it("removes the line when the quantity drops to zero", async () => {
     await updateCartItem({ variantId: "v1", quantity: 0 });
-    expect(harness.scenario.writes).toEqual([{ op: "delete", variantId: "v1" }]);
+    // The delete is scoped across every cart the student holds, not one assumed cart.
+    expect(harness.scenario.writes).toEqual([{ op: "delete", variantId: "v1", cartIds: ["cart-1"] }]);
   });
 
   it("clamps to the 10-unit cap so a stale page cannot exceed it", async () => {

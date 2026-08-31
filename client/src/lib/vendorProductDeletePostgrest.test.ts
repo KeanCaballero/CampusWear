@@ -20,6 +20,8 @@ const PUBLISHABLE_KEY = "sb_publishable_test";
 const scenario = {
   requests: [] as RecordedRequest[],
   deleteRows: [] as Array<{ id: string }>,
+  /** A PATCH returns the rows it changed; that is a different fixture from a DELETE. */
+  patchRows: [{ id: "product-1" }] as Array<{ id: string }>,
   productRow: { id: "product-1", image_path: "vendor-1/product-1/photo.jpg" } as Record<string, unknown> | null,
   /** When set, the DELETE answers with this PostgREST error body instead of rows. */
   deleteFailure: null as { status: number; body: Record<string, string> } | null,
@@ -65,7 +67,7 @@ const transport: typeof fetch = async (input, init) => {
       // and crucially this is a 200, not an error status.
       return jsonResponse(scenario.deleteRows);
     }
-    if (method === "PATCH") return jsonResponse(scenario.deleteRows);
+    if (method === "PATCH") return jsonResponse(scenario.patchRows);
     if (scenario.productRow === null) {
       return wantsSingleObject
         ? jsonResponse({ code: "PGRST116", message: "no rows" }, 406)

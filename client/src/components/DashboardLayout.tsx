@@ -21,6 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, readStoredSidebarWidth, storeSidebarWidth } from "@/lib/sidebarWidth";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { BrandMark } from "./campuswear/BrandMark";
 import { OfflineNotice } from "./campuswear/OfflineNotice";
@@ -31,11 +32,6 @@ import { useLocation } from "wouter";
 
 export type WorkspaceNavigationItem = { icon: LucideIcon; label: string; path: string };
 export type WorkspacePrimaryAction = { icon: LucideIcon; label: string; path: string };
-
-const SIDEBAR_WIDTH_KEY = "campuswear-sidebar-width";
-const DEFAULT_WIDTH = 272;
-const MIN_WIDTH = 224;
-const MAX_WIDTH = 360;
 
 export default function DashboardLayout({
   children,
@@ -48,13 +44,10 @@ export default function DashboardLayout({
   workspaceLabel: string;
   primaryAction?: WorkspacePrimaryAction;
 }) {
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-  });
+  const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
   const { loading, user } = useAuth();
 
-  useEffect(() => { localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString()); }, [sidebarWidth]);
+  useEffect(() => { storeSidebarWidth(sidebarWidth); }, [sidebarWidth]);
   if (loading) return <DashboardLayoutSkeleton />;
   if (!user) {
     return <div className="flex min-h-screen items-center justify-center bg-background"><div className="flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border border-border bg-card p-8 text-center"><BrandMark /><div><h1 className="text-2xl font-extrabold tracking-[-0.04em]">Sign in to continue</h1><p className="mt-3 text-sm leading-6 text-muted-foreground">Access to the {workspaceLabel.toLowerCase()} requires authentication.</p></div><Button onClick={() => window.location.assign(`/auth?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`)} size="lg" className="w-full">Sign in</Button></div></div>;
@@ -77,7 +70,7 @@ function DashboardLayoutContent({ children, items, workspaceLabel, primaryAction
       if (!isResizing) return;
       const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
       const width = event.clientX - left;
-      if (width >= MIN_WIDTH && width <= MAX_WIDTH) setSidebarWidth(width);
+      if (width >= MIN_SIDEBAR_WIDTH && width <= MAX_SIDEBAR_WIDTH) setSidebarWidth(width);
     };
     const up = () => setIsResizing(false);
     if (isResizing) {

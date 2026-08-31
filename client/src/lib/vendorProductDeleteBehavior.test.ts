@@ -11,26 +11,33 @@ const harness = vi.hoisted(() => {
   const scenario = {
     productRow: { id: "product-1", image_path: "vendor-1/product-1/photo.jpg" } as { id: string; image_path: string | null } | null,
     deletedRows: [] as Array<{ id: string }>,
+    /** PostgREST returns the patched rows when the write asks for a representation. */
+    updatedRows: [{ id: "product-1" }] as Array<{ id: string }>,
     removedPaths: [] as string[][],
     removeError: null as { message: string } | null,
     deleteError: null as { message: string } | null,
   };
 
-  function tableBuilder(resolveFor: (deleted: boolean) => unknown) {
-    const state = { deleted: false };
+  function tableBuilder(resolveFor: (deleted: boolean, updated?: boolean) => unknown) {
+    const state = { deleted: false, updated: false };
     const builder: any = {
       select: () => builder,
       eq: () => builder,
       order: () => builder,
+      limit: () => builder,
+      in: () => builder,
       insert: () => builder,
-      update: () => builder,
+      update: () => {
+        state.updated = true;
+        return builder;
+      },
       delete: () => {
         state.deleted = true;
         return builder;
       },
-      maybeSingle: () => Promise.resolve(resolveFor(state.deleted)),
-      single: () => Promise.resolve(resolveFor(state.deleted)),
-      then: (onFulfilled: any, onRejected: any) => Promise.resolve(resolveFor(state.deleted)).then(onFulfilled, onRejected),
+      maybeSingle: () => Promise.resolve(resolveFor(state.deleted, state.updated)),
+      single: () => Promise.resolve(resolveFor(state.deleted, state.updated)),
+      then: (onFulfilled: any, onRejected: any) => Promise.resolve(resolveFor(state.deleted, state.updated)).then(onFulfilled, onRejected),
     };
     return builder;
   }
@@ -40,13 +47,17 @@ const harness = vi.hoisted(() => {
       getUser: () => Promise.resolve({ data: { user: { id: "staff-1" } }, error: null }),
     },
     from: (table: string) => {
-      if (table === "vendor_staff") return tableBuilder(() => ({ data: { vendor_id: "vendor-1" }, error: null }));
+      // vendorContext() reads vendor_staff as an ordered, limited LIST — the table is keyed
+      // (vendor_id, user_id), so one user can staff several vendors — hence an array here.
+      if (table === "vendor_staff") return tableBuilder(() => ({ data: [{ vendor_id: "vendor-1" }], error: null }));
       if (table === "vendors") return tableBuilder(() => ({ data: { school_id: "school-1" }, error: null }));
       if (table === "products") {
-        return tableBuilder(deleted =>
+        return tableBuilder((deleted, updated) =>
           deleted
             ? { data: scenario.deletedRows, error: scenario.deleteError }
-            : { data: scenario.productRow, error: null },
+            : updated
+              ? { data: scenario.updatedRows, error: null }
+              : { data: scenario.productRow, error: null },
         );
       }
       throw new Error(`unexpected table: ${table}`);
