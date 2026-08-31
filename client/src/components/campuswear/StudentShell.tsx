@@ -117,7 +117,14 @@ export function StudentShell({ children }: { children: ReactNode }) {
             })}
           </nav>
 
-          <div className="flex items-center gap-1">
+          {/*
+              40px controls with 4px gaps, below the 44x44 / 8px ideal, and measured rather than
+              assumed. Raising them to 44px overflows the header by 7px at 375 and 13px at 768;
+              adding 8px gaps costs a further 25px at 768. Horizontal scroll is the worse failure,
+              and 40px still clears the WCAG 2.5.8 minimum of 24px. Reaching 44px needs the brand
+              lockup or the desktop nav to give up width, which is a navigation change.
+            */}
+            <div className="flex items-center gap-1">
             <Link
               href="/favorites"
               aria-current={isCurrent("/favorites") ? "page" : undefined}
