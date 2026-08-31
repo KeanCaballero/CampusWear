@@ -863,6 +863,80 @@ export async function uploadProductImage(input: { productId: string; file: File 
   return imageUrlFor(path) ?? "";
 }
 
+export type PickupOrderItem = { productName: string; size: string; quantity: number };
+export type PickupOrder = {
+  id: string;
+  orderNumber: string;
+  status: VendorOrder["status"];
+  pickupLocation: string;
+  items: PickupOrderItem[];
+};
+
+/**
+ * What a scanned or typed order number resolves to.
+ *
+ * `not_available` deliberately covers BOTH "no such order" and "belongs to another vendor". The two
+ * are indistinguishable to the caller by design — telling a vendor that an order exists but is not
+ * theirs would leak the existence of another store's orders to anyone able to guess a code.
+ */
+export type PickupLookup =
+  | { kind: "found"; order: PickupOrder }
+  | { kind: "not_ready"; order: PickupOrder }
+  | { kind: "closed"; order: PickupOrder }
+  | { kind: "not_available" };
+
+export function pickupLookupQueryKey(orderNumber: string) {
+  return ["supabase-pickup-lookup", orderNumber.trim().toUpperCase()] as const;
+}
+
+/**
+ * Resolve an order number for pickup verification.
+ *
+ * NO NEW BACKEND IS INVOLVED, and none is needed. The `orders` SELECT policy is granted to
+ * `authenticated` only and reads
+ *   student_id = auth.uid() OR private.is_vendor_staff(vendor_id) OR private.is_school_operator(...)
+ * so a vendor already sees exactly their own store's orders and nothing else. A code belonging to
+ * another vendor simply matches zero rows, which is why the generic result above is the honest one
+ * rather than a message we have to remember to write. `order_number` is UNIQUE, so the match is
+ * exact. `order_items` chains through the same check.
+ *
+ * DATA MINIMISATION: student_id is not selected, and no profile is joined. The vendor learns the
+ * order, where it is collected, and what is in it — which is all that verifying a handover needs.
+ * The QR carries only this order number, so scanning grants nothing that RLS would not already
+ * allow this vendor to read.
+ */
+export async function lookupPickupOrder(orderNumber: string): Promise<PickupLookup> {
+  const client = requireSupabase();
+  const normalized = orderNumber.trim().toUpperCase();
+  if (!normalized) return { kind: "not_available" };
+
+  const { data, error } = await client
+    .from("orders")
+    .select("id, order_number, status, pickup_location, order_items(product_name, variant_size, quantity)")
+    .eq("order_number", normalized)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { kind: "not_available" };
+
+  const order: PickupOrder = {
+    id: (data as any).id,
+    orderNumber: (data as any).order_number,
+    status: (data as any).status,
+    pickupLocation: (data as any).pickup_location,
+    items: ((data as any).order_items ?? []).map((item: any) => ({
+      productName: item.product_name,
+      size: item.variant_size,
+      quantity: item.quantity,
+    })),
+  };
+
+  if (order.status === "ready_for_pickup") return { kind: "found", order };
+  // Still moving through fulfilment — real, but nothing to hand over yet.
+  if (["pending", "confirmed", "preparing"].includes(order.status)) return { kind: "not_ready", order };
+  // completed / cancelled / rejected: terminal, so no handover is possible.
+  return { kind: "closed", order };
+}
+
 export type VendorInventoryItem = { variantId: string; productName: string; size: string; sku: string; quantity: number; lowStockThreshold: number; availability: Availability };
 export async function listVendorInventory(): Promise<VendorInventoryItem[]> {
   const client = requireSupabase();
