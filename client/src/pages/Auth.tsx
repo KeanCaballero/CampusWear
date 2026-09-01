@@ -1,4 +1,4 @@
-import { BrandMark } from "@/components/campuswear/BrandMark";
+import { AuthLayout } from "@/components/campuswear/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -8,7 +8,7 @@ import { confirmationEmailDeliveryChecklist, confirmationEmailResentMessage, con
 import { fullNameForProfile, signupDetailsSchema } from "@/lib/registrationDetails";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, CheckCircle2, ChevronLeft, Eye, EyeOff, GraduationCap, Loader2, MailCheck, RefreshCw, ShieldCheck, Store } from "lucide-react";
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Loader2, MailCheck, RefreshCw, Store } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useLocation } from "wouter";
@@ -26,12 +26,6 @@ const credentialsSchema = z.object({
 });
 
 type Credentials = z.infer<typeof credentialsSchema>;
-
-const accountBenefits = [
-  [GraduationCap, "Students", "Check availability and track pickup requests."],
-  [Store, "Authorized vendors", "Manage size-level stock and order fulfillment."],
-  [ShieldCheck, "School teams", "Oversee authorized campus operations."],
-] as const;
 
 function initialAuthMode(): AuthMode {
   if (typeof window === "undefined") return "sign-in";
@@ -170,165 +164,294 @@ export default function Auth() {
 
   if (loading) {
     return (
-      <main className="grid min-h-screen place-items-center bg-background">
-        <div className="flex items-center gap-3 text-sm font-semibold text-muted-foreground">
-          <Loader2 className="size-5 animate-spin text-primary" />
+      <main className="grid min-h-dvh place-items-center bg-background">
+        <p className="flex items-center gap-3 text-sm font-semibold text-muted-foreground">
+          <Loader2 className="size-5 animate-spin text-primary" aria-hidden="true" />
           Checking your CampusWear account…
-        </div>
+        </p>
       </main>
     );
   }
 
+  /*
+    Copy only, below this line. Every branch mirrors a mode the submit handler above already
+    handles — no new mode, no new field, and no new request is introduced by the redesign.
+  */
+  const eyebrow =
+    mode === "sign-up" ? "Join CampusWear"
+    : mode === "recovery" ? "Account recovery"
+    : mode === "confirmation" ? "Email confirmation"
+    : "Welcome back";
+
+  const heading =
+    mode === "sign-up" ? (vendorApplicationIntent ? "Start your vendor application." : "Create your CampusWear account.")
+    : mode === "recovery" ? "Reset your password."
+    : mode === "confirmation" ? "Request a fresh confirmation link."
+    : vendorApplicationIntent ? "Continue your vendor application."
+    : "Sign in to your account.";
+
+  const blurb =
+    mode === "sign-up"
+      ? vendorApplicationIntent
+        ? "Create a secure account first, then submit your real business and pickup details for administrator review. This does not grant vendor access automatically."
+        : "Join University of Cebu CampusWear to browse uniforms, place pickup orders, and track your purchases."
+    : mode === "recovery" ? "Enter your email and we will send you a reset link if an account exists."
+    : mode === "confirmation" ? "If your earlier confirmation link expired or was already used, enter the same email address to request another secure link."
+    : vendorApplicationIntent ? "Sign in to continue the vendor application you selected. Vendor access is activated only after administrator approval."
+    : "Sign in to your University of Cebu CampusWear account.";
+
+  const submitLabel =
+    submitting ? "Please wait…"
+    : mode === "sign-up" ? (vendorApplicationIntent ? "Create account and continue" : "Create account")
+    : mode === "recovery" ? "Send reset link"
+    : mode === "confirmation" ? "Send fresh confirmation link"
+    : vendorApplicationIntent ? "Sign in and continue"
+    : "Sign in";
+
+  const fieldClass = "mt-2 min-h-11 rounded-edge bg-card";
+
   return (
-    <main className="min-h-screen bg-background">
-      <div className="grid min-h-screen lg:grid-cols-[0.94fr_1.06fr]">
-        <section className="relative hidden overflow-hidden bg-primary p-10 text-primary-foreground lg:block">
-          <div className="absolute inset-0 campus-grid opacity-15" />
-          <div className="absolute -left-16 top-24 size-64 rounded-full border-[32px] border-white/10" />
-          <div className="absolute -bottom-20 right-12 size-72 rotate-12 rounded-[3.5rem] bg-[#f4dadd]/20" />
-          <div className="relative flex h-full max-w-md flex-col">
-            <BrandMark light />
-            <div className="my-auto">
-              <p className="text-xs font-extrabold tracking-[0.12em] text-blue-100">CAMPUSWEAR ACCOUNT</p>
-              <h1 className="mt-4 text-5xl font-extrabold leading-[1.04] tracking-[-0.065em]">Your Uniform. Your Identity.</h1>
-              <p className="mt-5 max-w-sm text-base leading-7 text-blue-100">One secure account for availability, pickup progress, and the workspace your school or vendor role allows.</p>
-              <div className="mt-10 space-y-4">
-                {accountBenefits.map(([Icon, title, detail]) => (
-                  <div key={title} className="flex gap-3 rounded-xl p-2 transition-colors hover:bg-white/5">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10"><Icon className="size-5" /></span>
-                    <div>
-                      <p className="font-extrabold">{title}</p>
-                      <p className="mt-1 text-sm leading-5 text-blue-100">{detail}</p>
-                    </div>
-                  </div>
-                ))}
+    <AuthLayout>
+      {isAuthenticated && user ? (
+        <section className="rounded-edge border border-border bg-card p-7">
+          <span className="grid size-12 place-items-center rounded-edge bg-secondary text-primary" aria-hidden="true">
+            <CheckCircle2 className="size-6" />
+          </span>
+          <p className="uc-eyebrow mt-6 text-campus-blue">You are signed in</p>
+          <h1 className="mt-3 text-[1.85rem] font-extrabold leading-tight tracking-[-0.035em] text-primary">
+            Welcome back{user.name ? `, ${user.name.split(" ")[0]}` : ""}.
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Continue to your CampusWear workspace or sign out to use another account.
+          </p>
+          <Button
+            className="mt-7 min-h-12 w-full gap-2 rounded-edge"
+            onClick={() => setLocation(safeNextPath(window.location.search) ?? destinationForRole(user.role))}
+          >
+            Continue to CampusWear <ArrowRight className="size-4" aria-hidden="true" />
+          </Button>
+          <Button variant="outline" className="mt-3 min-h-12 w-full rounded-edge" onClick={logout}>
+            Sign out
+          </Button>
+        </section>
+      ) : (
+        <>
+          <span className="uc-rule" aria-hidden="true" />
+          <p className="uc-eyebrow mt-5 text-campus-blue">{eyebrow}</p>
+          <h1 className="mt-3 text-[1.9rem] font-extrabold leading-[1.12] tracking-[-0.035em] text-primary sm:text-[2.1rem]">
+            {heading}
+          </h1>
+          <p className="mt-4 text-[15px] leading-7 text-muted-foreground">{blurb}</p>
+
+          {!vendorApplicationIntent && (mode === "sign-in" || mode === "sign-up") && (
+            <aside className="mt-7 rounded-edge border border-border bg-secondary/50 p-4">
+              <div className="flex gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-edge bg-card text-primary" aria-hidden="true">
+                  <Store className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-extrabold text-primary">Applying for a vendor business?</p>
+                  <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+                    Vendor registration is a separate application and approval process. It does not grant vendor tools automatically.
+                  </p>
+                  <Link href="/vendor/apply" className="mt-1 inline-flex min-h-11 items-center text-[13px] font-bold text-primary hover:underline">
+                    Apply as a vendor <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+                  </Link>
+                </div>
               </div>
-            </div>
-            <p className="text-xs leading-5 text-blue-100">Your school or vendor assignment controls the workspace you can access.</p>
-          </div>
-        </section>
+            </aside>
+          )}
 
-        <section className="flex min-h-screen flex-col px-5 py-6 sm:px-8 lg:px-16 lg:py-10">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-primary">
-              <ChevronLeft className="size-4" />Back to home
-            </Link>
-            <div className="lg:hidden"><BrandMark /></div>
-          </div>
+          <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
+            {mode === "sign-up" && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-bold text-foreground">
+                  First name
+                  <Input className={fieldClass} autoComplete="given-name" {...form.register("firstName")} />
+                  <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.firstName?.message}</span>
+                </label>
+                <label className="block text-sm font-bold text-foreground">
+                  Last name
+                  <Input className={fieldClass} autoComplete="family-name" {...form.register("lastName")} />
+                  <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.lastName?.message}</span>
+                </label>
+              </div>
+            )}
 
-          <div className="mx-auto flex w-full max-w-md flex-1 items-center py-12">
-            <div className="w-full campus-fade-in">
-              {isAuthenticated && user ? (
-                <section className="rounded-2xl border border-border bg-card p-7 shadow-sm">
-                  <span className="grid size-12 place-items-center rounded-2xl bg-secondary text-primary"><CheckCircle2 className="size-6" /></span>
-                  <p className="mt-6 text-xs font-bold tracking-[0.12em] text-primary">YOU ARE SIGNED IN</p>
-                  <h2 className="mt-2 text-3xl font-extrabold tracking-[-0.055em]">Welcome back{user.name ? `, ${user.name.split(" ")[0]}` : ""}.</h2>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">Continue to your CampusWear workspace or sign out to use another account.</p>
-                  <Button className="mt-7 h-11 w-full gap-2" onClick={() => setLocation(safeNextPath(window.location.search) ?? destinationForRole(user.role))}>
-                    Continue to CampusWear <ArrowRight className="size-4" />
-                  </Button>
-                  <Button variant="outline" className="mt-3 h-11 w-full" onClick={logout}>Sign out</Button>
-                </section>
-              ) : (
-                <>
-                  <div className="rounded-xl bg-muted p-1">
-                    <div className="grid grid-cols-2 gap-1">
-                      <button type="button" onClick={() => changeMode("sign-in")} className={`h-10 rounded-lg text-sm font-bold transition ${mode === "sign-in" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>Sign in</button>
-                      <button type="button" onClick={() => changeMode("sign-up")} className={`h-10 rounded-lg text-sm font-bold transition ${mode === "sign-up" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>Create account</button>
-                    </div>
-                  </div>
+            <label className="block text-sm font-bold text-foreground">
+              Email address
+              <Input className={fieldClass} type="email" autoComplete="email" {...form.register("email")} />
+              <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.email?.message}</span>
+            </label>
 
-                  <div className="mt-8">
-                    <p className="text-xs font-bold tracking-[0.12em] text-primary">{mode === "sign-up" ? "JOIN CAMPUSWEAR" : mode === "recovery" ? "ACCOUNT RECOVERY" : mode === "confirmation" ? "EMAIL CONFIRMATION" : "WELCOME BACK"}</p>
-                    <h1 className="mt-3 text-3xl font-extrabold tracking-[-0.06em] sm:text-4xl">{mode === "sign-up" ? vendorApplicationIntent ? "Start your vendor application." : "Create your CampusWear account." : mode === "recovery" ? "Reset your password." : mode === "confirmation" ? "Request a fresh confirmation link." : vendorApplicationIntent ? "Continue your vendor application." : "Sign in to your account."}</h1>
-                    <p className="mt-4 text-sm leading-6 text-muted-foreground">{mode === "sign-up" ? vendorApplicationIntent ? "Create a secure account first, then submit your real business and pickup details for administrator review. This does not grant vendor access automatically." : "Register with your school or organization email. Workspace access is assigned after onboarding." : mode === "recovery" ? "Enter your email and we will send a secure reset link if an account exists." : mode === "confirmation" ? "If your earlier confirmation link expired or was already used, enter the same email address to request another secure link." : vendorApplicationIntent ? "Sign in to continue the vendor application you selected. Vendor access is activated only after administrator approval." : "Use your secure CampusWear account to access your assigned workspace."}</p>
-                  </div>
-
-                  {!vendorApplicationIntent && (mode === "sign-in" || mode === "sign-up") && <aside className="mt-5 rounded-xl border border-primary/10 bg-secondary/55 p-4"><div className="flex gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-card text-primary shadow-sm"><Store className="size-4" aria-hidden="true" /></span><div><p className="text-sm font-extrabold">Applying for a vendor business?</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Vendor registration is a separate application and approval process. It does not grant vendor tools automatically.</p><Link href="/vendor/apply" className="mt-2 inline-flex text-xs font-bold text-primary hover:underline">Apply as a vendor <ArrowRight className="ml-1 size-3.5" aria-hidden="true" /></Link></div></div></aside>}
-
-                  <form onSubmit={submit} className="mt-7 space-y-4" noValidate>
-                    {mode === "sign-up" && (
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="block text-sm font-bold">
-                          First name
-                          <Input className="mt-2 h-11 bg-card" autoComplete="given-name" {...form.register("firstName")} />
-                          <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.firstName?.message}</span>
-                        </label>
-                        <label className="block text-sm font-bold">
-                          Last name
-                          <Input className="mt-2 h-11 bg-card" autoComplete="family-name" {...form.register("lastName")} />
-                          <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.lastName?.message}</span>
-                        </label>
-                      </div>
-                    )}
-                    <label className="block text-sm font-bold">
-                      Email
-                      <Input className="mt-2 h-11 bg-card" type="email" autoComplete="email" {...form.register("email")} />
-                      <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.email?.message}</span>
-                    </label>
-                    {(mode === "sign-in" || mode === "sign-up") && (
-                      <div>
-                        <label htmlFor="campuswear-password" className="block text-sm font-bold">Password</label>
-                        <div className="relative mt-2">
-                          <Input id="campuswear-password" className="h-11 bg-card pr-12" type={showPassword ? "text" : "password"} autoComplete={mode === "sign-up" ? "new-password" : "current-password"} {...form.register("password")} />
-                          <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(visible => !visible)} className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-md text-muted-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                          </button>
-                        </div>
-                        <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.password?.message}</span>
-                      </div>
-                    )}
-                    {mode === "sign-up" && (
-                      <div>
-                        <label htmlFor="campuswear-password-confirmation" className="block text-sm font-bold">Confirm password</label>
-                        <div className="relative mt-2">
-                          <Input id="campuswear-password-confirmation" className="h-11 bg-card pr-12" type={showPasswordConfirmation ? "text" : "password"} autoComplete="new-password" {...form.register("passwordConfirmation")} />
-                          <button type="button" aria-label={showPasswordConfirmation ? "Hide confirmed password" : "Show confirmed password"} aria-pressed={showPasswordConfirmation} onClick={() => setShowPasswordConfirmation(visible => !visible)} className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-md text-muted-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            {showPasswordConfirmation ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                          </button>
-                        </div>
-                        <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.passwordConfirmation?.message}</span>
-                      </div>
-                    )}
-                    <Button type="submit" disabled={submitting || !isSupabaseConfigured} className="h-12 w-full gap-2 text-sm">
-                      {submitting ? "Please wait…" : mode === "sign-up" ? vendorApplicationIntent ? "Create account and continue" : "Create secure account" : mode === "recovery" ? "Send reset link" : mode === "confirmation" ? "Send fresh confirmation link" : vendorApplicationIntent ? "Sign in and continue" : "Sign in"}
-                      <ArrowRight className="size-4" />
-                    </Button>
-                  </form>
-
-                  {confirmationRecipient && (
-                    <section aria-live="polite" className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-950 shadow-sm">
-                      <div className="flex gap-3">
-                        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
-                          <MailCheck className="size-5" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-extrabold">Check your email to confirm your account.</p>
-                          <p className="mt-1 text-sm leading-5 text-emerald-900">{confirmationEmailSentMessage(confirmationRecipient)}</p>
-                        </div>
-                      </div>
-                      <ul className="mt-4 space-y-2 border-t border-emerald-200 pt-3 text-sm leading-5 text-emerald-900">
-                        {confirmationEmailDeliveryChecklist.map(item => <li key={item} className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-700" aria-hidden="true" />{item}</li>)}
-                      </ul>
-                      <p className="mt-3 text-xs leading-5 text-emerald-800">If the message is not there after a few minutes, request another link. Email safeguards may temporarily limit repeated requests.</p>
-                      <Button type="button" variant="outline" className="mt-4 h-11 w-full border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100" disabled={resendingConfirmation} onClick={resendConfirmation}>
-                        {resendingConfirmation ? "Requesting another email…" : "Send confirmation email again"}
-                        <RefreshCw className={`ml-2 size-4 ${resendingConfirmation ? "animate-spin" : ""}`} aria-hidden="true" />
-                      </Button>
-                    </section>
+            {(mode === "sign-in" || mode === "sign-up") && (
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="campuswear-password" className="block text-sm font-bold text-foreground">Password</label>
+                  {mode === "sign-in" && (
+                    <button
+                      type="button"
+                      onClick={() => changeMode("recovery")}
+                      className="inline-flex min-h-11 items-center text-[13px] font-bold text-campus-blue hover:underline"
+                    >
+                      Forgot password?
+                    </button>
                   )}
+                </div>
+                <div className="relative mt-2">
+                  <Input
+                    id="campuswear-password"
+                    className="min-h-11 rounded-edge bg-card pr-12"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
+                    {...form.register("password")}
+                  />
+                  <button
+                    type="button"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword(visible => !visible)}
+                    className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+                <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.password?.message}</span>
+              </div>
+            )}
 
-                  {submissionFeedback && <p role="alert" className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-sm leading-5 text-destructive">{submissionFeedback}</p>}
-                  {mode === "sign-in" && <div className="mt-4 space-y-2 text-center"><button type="button" className="block min-h-11 w-full rounded-lg text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-blue" onClick={() => changeMode("recovery")}>Forgot your password?</button><button type="button" className="block min-h-11 w-full rounded-lg text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-campus-blue" onClick={() => changeMode("confirmation")}>Need a new confirmation email?</button></div>}
-                  {mode === "confirmation" && <button type="button" className="mt-4 w-full text-center text-sm font-bold text-primary hover:underline" onClick={() => changeMode("sign-in")}>Back to sign in</button>}
-                  {!isSupabaseConfigured && <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">Account setup is not complete. Please contact the CampusWear administrator.</p>}
-                  <p className="mt-5 text-center text-xs leading-5 text-muted-foreground">By continuing, you agree to use CampusWear only for authorized school and vendor activity.</p>
-                </>
-              )}
-            </div>
+            {mode === "sign-up" && (
+              <div>
+                <label htmlFor="campuswear-password-confirmation" className="block text-sm font-bold text-foreground">Confirm password</label>
+                <div className="relative mt-2">
+                  <Input
+                    id="campuswear-password-confirmation"
+                    className="min-h-11 rounded-edge bg-card pr-12"
+                    type={showPasswordConfirmation ? "text" : "password"}
+                    autoComplete="new-password"
+                    {...form.register("passwordConfirmation")}
+                  />
+                  <button
+                    type="button"
+                    aria-label={showPasswordConfirmation ? "Hide confirmed password" : "Show confirmed password"}
+                    aria-pressed={showPasswordConfirmation}
+                    onClick={() => setShowPasswordConfirmation(visible => !visible)}
+                    className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {showPasswordConfirmation ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+                <span className="mt-1.5 block min-h-5 text-xs text-destructive">{form.formState.errors.passwordConfirmation?.message}</span>
+              </div>
+            )}
+
+            <Button type="submit" disabled={submitting || !isSupabaseConfigured} className="min-h-12 w-full gap-2 rounded-edge text-sm">
+              {submitLabel}
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Button>
+          </form>
+
+          {confirmationRecipient && (
+            <section aria-live="polite" className="mt-6 rounded-edge border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-950">
+              <div className="flex gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-edge bg-emerald-100 text-emerald-700" aria-hidden="true">
+                  <MailCheck className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-extrabold">Check your email to confirm your account.</p>
+                  <p className="mt-1 text-sm leading-5 text-emerald-900">{confirmationEmailSentMessage(confirmationRecipient)}</p>
+                </div>
+              </div>
+              <ul className="mt-4 space-y-2 border-t border-emerald-200 pt-3 text-sm leading-5 text-emerald-900">
+                {confirmationEmailDeliveryChecklist.map(item => (
+                  <li key={item} className="flex gap-2">
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-700" aria-hidden="true" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs leading-5 text-emerald-800">
+                If the message is not there after a few minutes, request another link. Email safeguards may temporarily limit repeated requests.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-4 min-h-11 w-full rounded-edge border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"
+                disabled={resendingConfirmation}
+                onClick={resendConfirmation}
+              >
+                {resendingConfirmation ? "Requesting another email…" : "Send confirmation email again"}
+                <RefreshCw className={`ml-2 size-4 ${resendingConfirmation ? "animate-spin" : ""}`} aria-hidden="true" />
+              </Button>
+            </section>
+          )}
+
+          {submissionFeedback && (
+            <p role="alert" className="mt-5 rounded-edge border border-destructive/25 bg-destructive/5 p-3 text-sm leading-5 text-destructive">
+              {submissionFeedback}
+            </p>
+          )}
+
+          {!isSupabaseConfigured && (
+            <p className="mt-5 rounded-edge border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
+              Account setup is not complete. Please contact the CampusWear administrator.
+            </p>
+          )}
+
+          {/*
+            Mode switching lives here rather than in a segmented control at the top: one screen at a
+            time, with the alternative offered as a sentence, which is how the design presents it.
+          */}
+          <div className="mt-8 border-t border-border pt-6">
+            {mode === "sign-in" && (
+              <>
+                <p className="text-center text-sm text-muted-foreground">Don&apos;t have an account?</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => changeMode("sign-up")}
+                  className="mt-3 min-h-12 w-full rounded-edge"
+                >
+                  Create an account
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => changeMode("confirmation")}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center text-[13px] font-bold text-muted-foreground hover:text-primary hover:underline"
+                >
+                  Need a new confirmation email?
+                </button>
+              </>
+            )}
+            {mode === "sign-up" && (
+              <>
+                <p className="text-center text-sm text-muted-foreground">Already have an account?</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => changeMode("sign-in")}
+                  className="mt-3 min-h-12 w-full rounded-edge"
+                >
+                  Sign in
+                </Button>
+              </>
+            )}
+            {(mode === "recovery" || mode === "confirmation") && (
+              <button
+                type="button"
+                onClick={() => changeMode("sign-in")}
+                className="inline-flex min-h-11 w-full items-center justify-center text-sm font-bold text-campus-blue hover:underline"
+              >
+                Back to sign in
+              </button>
+            )}
           </div>
-        </section>
-      </div>
-    </main>
+
+          <p className="mt-6 text-center text-xs leading-5 text-muted-foreground">
+            By continuing, you agree to use CampusWear only for authorized school and vendor activity.
+          </p>
+        </>
+      )}
+    </AuthLayout>
   );
 }
