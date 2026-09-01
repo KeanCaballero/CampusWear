@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/campuswear/StatusBadge";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { lookupPickupOrder, transitionVendorOrder, VendorFacingError, vendorOrdersQueryKey, type PickupLookup, type PickupOrder } from "@/lib/supabaseCatalog";
+import { formatPeso } from "@/lib/format";
 import { vendorNavigation, vendorPrimaryAction } from "./workspace";
 
 /**
@@ -289,9 +290,14 @@ function PickupResult({
 
       <ul className="mt-4 divide-y divide-border border-y border-border" aria-label="Items in this order">
         {order.items.map((item, index) => (
-          <li key={`${item.productName}-${item.size}-${index}`} className="flex items-center justify-between gap-3 py-2.5">
-            <span className="min-w-0 text-sm font-semibold">{item.productName}</span>
-            <span className="shrink-0 text-xs font-bold tabular-nums text-muted-foreground">Size {item.size} · ×{item.quantity}</span>
+          <li key={`${item.productName}-${item.size}-${index}`} className="flex items-start justify-between gap-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-snug">{item.productName}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Size {item.size} · <span className="tabular-nums">Qty × {item.quantity}</span>
+              </p>
+            </div>
+            <p className="shrink-0 text-sm font-extrabold tabular-nums">{formatPeso(item.lineTotalInCentavos)}</p>
           </li>
         ))}
       </ul>

@@ -863,7 +863,7 @@ export async function uploadProductImage(input: { productId: string; file: File 
   return imageUrlFor(path) ?? "";
 }
 
-export type PickupOrderItem = { productName: string; size: string; quantity: number };
+export type PickupOrderItem = { productName: string; size: string; quantity: number; lineTotalInCentavos: number };
 export type PickupOrder = {
   id: string;
   orderNumber: string;
@@ -901,7 +901,8 @@ export function pickupLookupQueryKey(orderNumber: string) {
  * exact. `order_items` chains through the same check.
  *
  * DATA MINIMISATION: student_id is not selected, and no profile is joined. The vendor learns the
- * order, where it is collected, and what is in it — which is all that verifying a handover needs.
+ * order, where it is collected, what is in it, and what each line is worth — all of it their own
+ * store's commercial data, and all of it needed to check a handover against what was paid for.
  * The QR carries only this order number, so scanning grants nothing that RLS would not already
  * allow this vendor to read.
  */
@@ -912,7 +913,7 @@ export async function lookupPickupOrder(orderNumber: string): Promise<PickupLook
 
   const { data, error } = await client
     .from("orders")
-    .select("id, order_number, status, pickup_location, order_items(product_name, variant_size, quantity)")
+    .select("id, order_number, status, pickup_location, order_items(product_name, variant_size, quantity, line_total_in_centavos)")
     .eq("order_number", normalized)
     .maybeSingle();
   if (error) throw error;
@@ -927,6 +928,7 @@ export async function lookupPickupOrder(orderNumber: string): Promise<PickupLook
       productName: item.product_name,
       size: item.variant_size,
       quantity: item.quantity,
+      lineTotalInCentavos: item.line_total_in_centavos ?? 0,
     })),
   };
 

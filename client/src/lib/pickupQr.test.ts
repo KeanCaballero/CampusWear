@@ -109,7 +109,7 @@ const orderRow = (status: string) => ({
   order_number: ORDER,
   status,
   pickup_location: "Ground Floor",
-  order_items: [{ product_name: "BSIT UNI M", variant_size: "S", quantity: 1 }],
+  order_items: [{ product_name: "BSIT UNI M", variant_size: "S", quantity: 1, line_total_in_centavos: 39900 }],
 });
 
 beforeEach(() => {
@@ -126,7 +126,7 @@ describe("vendor pickup lookup", () => {
     if (result.kind === "found") {
       expect(result.order.orderNumber).toBe(ORDER);
       expect(result.order.pickupLocation).toBe("Ground Floor");
-      expect(result.order.items).toEqual([{ productName: "BSIT UNI M", size: "S", quantity: 1 }]);
+      expect(result.order.items).toEqual([{ productName: "BSIT UNI M", size: "S", quantity: 1, lineTotalInCentavos: 39900 }]);
     }
   });
 
@@ -169,6 +169,8 @@ describe("vendor pickup lookup", () => {
     }
     expect(harness.scenario.selected).toContain("order_number");
     expect(harness.scenario.selected).toContain("pickup_location");
+    // The vendor's own commercial figure is fine; it is identity that must stay out.
+    expect(harness.scenario.selected).toContain("line_total_in_centavos");
   });
 
   it("propagates a transport failure rather than pretending the order is missing", async () => {
