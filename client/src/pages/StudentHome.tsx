@@ -15,7 +15,8 @@ import { formatPeso, formatShortDate } from "@/lib/format";
 import { listAnnouncements, listPublicCatalog } from "@/lib/supabaseCatalog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BellRing, ClipboardList, GraduationCap, PackageSearch, Search, Store } from "lucide-react";
+import { ArrowRight, BellRing, ClipboardList, PackageSearch, Search, Store } from "lucide-react";
+import { CampusWearMark } from "@/components/campuswear/BrandMark";
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 
@@ -64,7 +65,15 @@ export default function StudentHome() {
           <div className="relative z-10 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-10 xl:gap-14">
             <div>
               <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-campus-gold">
-                <GraduationCap className="size-4" aria-hidden="true" />
+                {/*
+                  The CampusWear mark, not a generic mortarboard. `mono` paints the polo from
+                  currentColor, so it takes the eyebrow's gold rather than fighting it with the
+                  navy-and-blue lockup, which would disappear against this navy hero. Hidden from
+                  readers because the line it decorates already ends in "CampusWear".
+                */}
+                <span aria-hidden="true" className="contents">
+                  <CampusWearMark variant="mono" className="size-4 shrink-0" title="" />
+                </span>
                 {/*
                   The real school record from the catalogue, never a hard-coded campus. Falls back to the
                   generic label rather than naming a university that has not loaded.
